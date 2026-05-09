@@ -1,0 +1,40 @@
+{
+  "name": "minibeam",
+  "version": "0.1.0",
+  "description": "Portable Electron prototype for synchronized video watching over a public IP.",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "check": "node --check src/main/main.js && node --check src/server/server.js && node --check src/renderer/app.js && node --check src/preload/preload.js"
+  },
+  "dependencies": {
+    "electron": "^30.5.1",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "local.minibeam.prototype",
+    "productName": "MiniBeam",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}
