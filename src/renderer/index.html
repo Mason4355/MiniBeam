@@ -34,7 +34,7 @@
         <section class="beam">
           <div class="browser-shell">
             <div class="browser-tabs">
-              <button class="tab active" type="button">New tab</button>
+              <button class="tab active" type="button" title="Current page">New tab</button>
               <button class="tab-add" type="button">+</button>
             </div>
 
@@ -47,6 +47,14 @@
             </form>
 
             <div class="browser-viewport">
+              <div id="loadingOverlay" class="browser-overlay" hidden>
+                <span class="spinner"></span>
+                <strong>Загрузка страницы</strong>
+              </div>
+              <div id="errorOverlay" class="browser-overlay error-overlay" hidden>
+                <strong>Страница не открылась</strong>
+                <span id="errorText">Попробуйте обновить или открыть другую ссылку.</span>
+              </div>
               <div id="homeScreen" class="home-screen">
                 <div class="home-logo">
                   <span class="home-mark">M</span>
@@ -72,6 +80,9 @@
             <button id="homeButton" type="button">Home</button>
             <span id="browserStatus">Готово</span>
             <div class="spacer"></div>
+            <button id="zoomOutButton" type="button">-</button>
+            <span id="zoomLabel">100%</span>
+            <button id="zoomInButton" type="button">+</button>
             <button id="copyUrlButton" type="button">Копировать ссылку</button>
           </div>
         </section>

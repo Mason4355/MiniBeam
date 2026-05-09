@@ -83,6 +83,13 @@ function createMiniBeamServer(options = {}) {
     socket.emit("room:state", serializeRoom(room, socket.id));
     io.to(roomCode).emit("participants:update", Array.from(room.participants.values()));
 
+    socket.on("browser:navigate", (url) => {
+      room.browserUrl = normalizeBrowserUrl(url);
+      updateStatus(socket.id, participant.isHost ? "Хост ведёт показ" : "Смотрит");
+      socket.to(roomCode).emit("browser:navigate", room.browserUrl);
+      io.to(roomCode).emit("participants:update", Array.from(room.participants.values()));
+    });
+
     socket.on("video:set", (videoUrl) => {
       room.videoUrl = String(videoUrl || "").trim();
       room.currentTime = 0;
@@ -91,13 +98,6 @@ function createMiniBeamServer(options = {}) {
       updateStatus(socket.id, "Пауза");
       io.to(roomCode).emit("video:set", room.videoUrl);
       io.to(roomCode).emit("playback:update", playbackSnapshot(room));
-      io.to(roomCode).emit("participants:update", Array.from(room.participants.values()));
-    });
-
-    socket.on("browser:navigate", (url) => {
-      room.browserUrl = normalizeBrowserUrl(url);
-      updateStatus(socket.id, participant.isHost ? "Host browsing" : "Watching");
-      socket.to(roomCode).emit("browser:navigate", room.browserUrl);
       io.to(roomCode).emit("participants:update", Array.from(room.participants.values()));
     });
 
@@ -205,6 +205,16 @@ function serializeRoom(room, selfId) {
   };
 }
 
+function playbackSnapshot(room, type = "sync") {
+  return {
+    type,
+    isPlaying: room.isPlaying,
+    currentTime: room.currentTime,
+    volume: room.volume,
+    updatedAt: room.updatedAt
+  };
+}
+
 function normalizeBrowserUrl(url) {
   const value = String(url || "").trim();
   if (!value) return "";
@@ -218,16 +228,6 @@ function normalizeBrowserUrl(url) {
   }
 
   return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`;
-}
-
-function playbackSnapshot(room, type = "sync") {
-  return {
-    type,
-    isPlaying: room.isPlaying,
-    currentTime: room.currentTime,
-    volume: room.volume,
-    updatedAt: room.updatedAt
-  };
 }
 
 module.exports = {

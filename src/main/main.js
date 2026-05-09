@@ -6,6 +6,9 @@ let mainWindow;
 let miniBeamServer;
 let serverInfo;
 
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+app.commandLine.appendSwitch("disable-features", "OutOfBlinkCors");
+
 async function createWindow() {
   const staticDir = path.join(__dirname, "..", "renderer");
   miniBeamServer = createMiniBeamServer({ staticDir });
@@ -25,6 +28,11 @@ async function createWindow() {
       sandbox: false,
       webviewTag: true
     }
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    mainWindow.webContents.send("browser:open-url", url);
+    return { action: "deny" };
   });
 
   await mainWindow.loadURL(serverInfo.localUrl);

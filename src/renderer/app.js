@@ -16,6 +16,12 @@ const elements = {
   reloadButton: document.querySelector("#reloadButton"),
   homeButton: document.querySelector("#homeButton"),
   copyUrlButton: document.querySelector("#copyUrlButton"),
+  zoomOutButton: document.querySelector("#zoomOutButton"),
+  zoomInButton: document.querySelector("#zoomInButton"),
+  zoomLabel: document.querySelector("#zoomLabel"),
+  loadingOverlay: document.querySelector("#loadingOverlay"),
+  errorOverlay: document.querySelector("#errorOverlay"),
+  errorText: document.querySelector("#errorText"),
   messages: document.querySelector("#messages"),
   chatForm: document.querySelector("#chatForm"),
   chatInput: document.querySelector("#chatInput")
@@ -28,7 +34,9 @@ const state = {
   selfId: "",
   currentUrl: "",
   syncingNavigation: false,
-  browserReady: Boolean(elements.roomBrowser)
+  browserReady: Boolean(elements.roomBrowser),
+  zoomFactor: 1,
+  lastBroadcastUrl: ""
 };
 
 bootstrap();
@@ -56,9 +64,10 @@ async function bootstrap() {
   wireSocket();
   wireUi();
   wireBrowser();
+  updateNavigationButtons();
 
   if (!state.browserReady) {
-    elements.browserStatus.textContent = "Встроенный браузер доступен только в Electron";
+    elements.browserStatus.textContent = "Встроенный браузер доступен только в MiniBeam.exe";
   }
 }
 
@@ -125,6 +134,10 @@ function wireUi() {
   });
 
   elements.homeButton.addEventListener("click", () => showHome());
+  elements.zoomOutButton.addEventListener("click", () => setZoom(state.zoomFactor - 0.1));
+  elements.zoomInButton.addEventListener("click", () => setZoom(state.zoomFactor + 0.1));
+
+  window.miniBeam.onOpenUrl((url) => navigateBrowser(url, true));
 
   elements.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -138,13 +151,35 @@ function wireUi() {
 function wireBrowser() {
   if (!state.browserReady) return;
 
+  elements.roomBrowser.setAttribute("useragent", getDesktopUserAgent());
+
   elements.roomBrowser.addEventListener("did-start-loading", () => {
     elements.browserStatus.textContent = "Загрузка...";
+    elements.loadingOverlay.hidden = false;
+    elements.errorOverlay.hidden = true;
   });
 
   elements.roomBrowser.addEventListener("did-stop-loading", () => {
     elements.browserStatus.textContent = "Готово";
+    elements.loadingOverlay.hidden = true;
     updateNavigationButtons();
+  });
+
+  elements.roomBrowser.addEventListener("did-fail-load", (event) => {
+    if (event.errorCode === -3) return;
+    elements.loadingOverlay.hidden = true;
+    elements.errorOverlay.hidden = false;
+    elements.errorText.textContent = event.errorDescription || "Попробуйте обновить или открыть другую ссылку.";
+    elements.browserStatus.textContent = "Ошибка загрузки";
+  });
+
+  elements.roomBrowser.addEventListener("dom-ready", () => {
+    elements.roomBrowser.setZoomFactor(state.zoomFactor);
+  });
+
+  elements.roomBrowser.addEventListener("new-window", (event) => {
+    event.preventDefault();
+    navigateBrowser(event.url, true);
   });
 
   elements.roomBrowser.addEventListener("did-navigate", (event) => handleBrowserUrl(event.url));
@@ -152,7 +187,9 @@ function wireBrowser() {
 
   elements.roomBrowser.addEventListener("page-title-updated", (event) => {
     const title = event.title || "New tab";
-    document.querySelector(".tab.active").textContent = title.slice(0, 38);
+    const tab = document.querySelector(".tab.active");
+    tab.textContent = title;
+    tab.title = title;
   });
 }
 
@@ -163,6 +200,7 @@ function navigateBrowser(value, shouldBroadcast) {
   state.currentUrl = url;
   elements.addressInput.value = url;
   elements.homeScreen.hidden = true;
+  elements.errorOverlay.hidden = true;
 
   if (!state.browserReady) {
     elements.browserStatus.textContent = "Откройте эту комнату в MiniBeam.exe";
@@ -170,9 +208,10 @@ function navigateBrowser(value, shouldBroadcast) {
   }
 
   state.syncingNavigation = !shouldBroadcast;
-  elements.roomBrowser.src = url;
+  elements.roomBrowser.loadURL(url);
 
   if (shouldBroadcast) {
+    state.lastBroadcastUrl = url;
     state.socket.emit("browser:navigate", url);
   }
 }
@@ -189,6 +228,8 @@ function handleBrowserUrl(url) {
     return;
   }
 
+  if (url === state.lastBroadcastUrl) return;
+  state.lastBroadcastUrl = url;
   state.socket.emit("browser:navigate", url);
 }
 
@@ -197,9 +238,11 @@ function showHome() {
   elements.addressInput.value = "";
   elements.homeSearchInput.value = "";
   elements.homeScreen.hidden = false;
+  elements.loadingOverlay.hidden = true;
+  elements.errorOverlay.hidden = true;
   elements.browserStatus.textContent = "Готово";
   if (state.browserReady) {
-    elements.roomBrowser.src = "about:blank";
+    elements.roomBrowser.loadURL("about:blank");
   }
 }
 
@@ -216,10 +259,18 @@ function updateNavigationButtons() {
   elements.reloadButton.disabled = !state.currentUrl;
 }
 
+function setZoom(nextZoom) {
+  state.zoomFactor = Math.min(1.4, Math.max(0.7, Number(nextZoom.toFixed(1))));
+  elements.zoomLabel.textContent = `${Math.round(state.zoomFactor * 100)}%`;
+  if (state.browserReady) {
+    elements.roomBrowser.setZoomFactor(state.zoomFactor);
+  }
+}
+
 function renderParticipants(participants) {
   elements.participantCount.textContent = participants.length;
   elements.participants.innerHTML = participants.map((participant) => `
-    <article class="participant">
+    <article class="participant" title="${escapeHtml(participant.name)}: ${escapeHtml(participant.status)}">
       <div class="avatar">${escapeHtml(participant.avatar)}</div>
       <div>
         <strong>${escapeHtml(participant.name)}${participant.id === state.selfId ? " · Вы" : ""}</strong>
@@ -261,6 +312,10 @@ function normalizeUrl(value) {
   }
 
   return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
+}
+
+function getDesktopUserAgent() {
+  return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 }
 
 function flashButton(button, text, originalText) {
