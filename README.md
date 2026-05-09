@@ -18,9 +18,10 @@ npm start
 For now, use the BAT files while the app is being patched:
 
 - `01-install-deps.bat` installs dependencies.
-- `02-start-dev.bat` starts the development app.
-- `03-check-code.bat` checks JavaScript syntax.
-- `04-build-portable-exe.bat` is paused intentionally.
+- `02-start-server.bat` starts the standalone room server.
+- `03-start-client.bat` starts the Electron browser client.
+- `04-check-code.bat` checks JavaScript syntax.
+- `05-build-portable-exe.bat` is paused intentionally.
 
 ## Build Portable EXE Later
 

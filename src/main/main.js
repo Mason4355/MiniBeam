@@ -1,14 +1,12 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { app, BrowserView, BrowserWindow, ipcMain, session } = require("electron");
-const { createRoomServer, normalizeUrl } = require("../server/room-server");
+const { normalizeUrl } = require("../server/room-server");
 
 const BROWSER_PARTITION = "persist:minibeam-browser";
 
 let mainWindow;
 let browserView;
-let roomServer;
-let serverInfo;
 let browserVisible = false;
 let zoomFactor = 1;
 let blockedCount = 0;
@@ -53,17 +51,11 @@ async function shutdown() {
     });
   } catch {}
 
-  if (!roomServer) return;
-  const server = roomServer;
-  roomServer = null;
-  await server.stop();
   await cleanupRuntimeTrash();
 }
 
 async function createWindow() {
-  const staticDir = path.join(__dirname, "..", "renderer");
-  roomServer = createRoomServer({ staticDir });
-  serverInfo = await roomServer.start(0);
+  const serverUrl = getServerUrl();
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -80,7 +72,7 @@ async function createWindow() {
     }
   });
 
-  await mainWindow.loadURL(serverInfo.localUrl);
+  await mainWindow.loadURL(serverUrl);
   createBrowserView();
   mainWindow.on("resize", updateBrowserBounds);
   mainWindow.on("maximize", updateBrowserBounds);
@@ -133,7 +125,10 @@ function createBrowserView() {
   browserView.webContents.on("page-title-updated", (_event, title) => sendBrowserEvent("title", { title }));
 }
 
-ipcMain.handle("app:server-info", () => serverInfo);
+ipcMain.handle("app:server-info", () => {
+  const serverUrl = getServerUrl();
+  return { roomCode: "", localUrl: serverUrl, lanUrl: serverUrl };
+});
 ipcMain.handle("app:copy", (_event, text) => {
   require("electron").clipboard.writeText(String(text || ""));
 });
@@ -185,15 +180,18 @@ function updateBrowserBounds() {
   const topbar = 60;
   const browserTabs = 42;
   const browserToolbar = 54;
-  const bottomBar = 52;
 
   browserView.setBounds({
     x: leftRail,
     y: topbar + browserTabs + browserToolbar,
     width: Math.max(320, width - leftRail - rightPanel),
-    height: Math.max(240, height - topbar - browserTabs - browserToolbar - bottomBar)
+    height: Math.max(240, height - topbar - browserTabs - browserToolbar)
   });
   browserView.setAutoResize({ width: true, height: true });
+}
+
+function getServerUrl() {
+  return process.env.MINIBEAM_SERVER_URL || "http://127.0.0.1:3847";
 }
 
 function sendNavigationState() {

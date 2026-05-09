@@ -39,6 +39,8 @@
               <button id="forwardButton" class="circle-button" type="button" aria-label="Вперёд">›</button>
               <button id="reloadButton" class="circle-button" type="button" aria-label="Обновить">↻</button>
               <input id="addressInput" type="text" autocomplete="off" placeholder="Введите адрес или поисковый запрос" />
+              <span id="statusText" class="toolbar-status">Готово</span>
+              <span id="adblockText" class="shield">Блок: 0</span>
               <button class="go-button" type="submit">Go</button>
             </form>
 
@@ -62,17 +64,6 @@
               <div id="pageOverlay" class="page-overlay" hidden></div>
             </div>
           </div>
-
-          <footer class="bottombar">
-            <button id="homeButton" type="button">Home</button>
-            <span id="statusText">Готово</span>
-            <span id="adblockText" class="shield">Блок: 0</span>
-            <div class="spacer"></div>
-            <button id="zoomOutButton" type="button">-</button>
-            <span id="zoomLabel">100%</span>
-            <button id="zoomInButton" type="button">+</button>
-            <button id="copyUrlButton" type="button">Копировать ссылку</button>
-          </footer>
         </section>
 
         <aside class="chat-panel">

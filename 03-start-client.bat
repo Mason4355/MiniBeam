@@ -2,8 +2,10 @@
 setlocal
 cd /d "%~dp0"
 set "PATH=%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs;%PATH%"
+set "MINIBEAM_SERVER_URL=http://127.0.0.1:3847"
 
-echo [MiniBeam] Starting development app...
+echo [MiniBeam] Starting client app...
+echo Make sure 02-start-server.bat is already running.
 echo.
 
 where npm >nul 2>nul
@@ -22,7 +24,7 @@ if not exist node_modules (
   exit /b 1
 )
 
-call npm start
+call npm run client
 
 echo.
 echo Cleaning MiniBeam helper processes...

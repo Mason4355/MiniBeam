@@ -14,13 +14,8 @@ const ui = {
   pageOverlay: document.querySelector("#pageOverlay"),
   homeForm: document.querySelector("#homeForm"),
   homeInput: document.querySelector("#homeInput"),
-  homeButton: document.querySelector("#homeButton"),
   statusText: document.querySelector("#statusText"),
   adblockText: document.querySelector("#adblockText"),
-  zoomOutButton: document.querySelector("#zoomOutButton"),
-  zoomInButton: document.querySelector("#zoomInButton"),
-  zoomLabel: document.querySelector("#zoomLabel"),
-  copyUrlButton: document.querySelector("#copyUrlButton"),
   messages: document.querySelector("#messages"),
   chatForm: document.querySelector("#chatForm"),
   chatInput: document.querySelector("#chatInput")
@@ -45,12 +40,12 @@ async function init() {
   state.roomCode = params.get("room") || info.roomCode;
   state.inviteUrl = info.lanUrl;
 
-  ui.roomLabel.textContent = `Комната ${state.roomCode}`;
+  ui.roomLabel.textContent = state.roomCode ? `Комната ${state.roomCode}` : "Подключение";
   ui.inviteUrl.textContent = info.lanUrl;
 
   state.socket = io({
     auth: {
-      room: state.roomCode,
+      room: state.roomCode || undefined,
       name: localStorage.getItem("minibeam:name") || createName(),
       host: location.hostname === "127.0.0.1" || location.hostname === "localhost"
     }
@@ -64,6 +59,10 @@ async function init() {
 function bindSocket() {
   state.socket.on("room:state", (room) => {
     state.selfId = room.selfId;
+    state.roomCode = room.roomCode;
+    state.inviteUrl = `${location.origin}/?room=${room.roomCode}`;
+    ui.roomLabel.textContent = `Комната ${room.roomCode}`;
+    ui.inviteUrl.textContent = state.inviteUrl;
     renderParticipants(room.participants);
     renderMessages(room.messages);
     if (room.browserUrl) navigate(room.browserUrl, false);
@@ -79,11 +78,6 @@ function bindUi() {
   ui.copyInviteButton.addEventListener("click", async () => {
     await window.miniBeam.copy(`${state.roomCode} ${state.inviteUrl}`);
     flash(ui.copyInviteButton, "Скопировано", "Копировать приглашение");
-  });
-
-  ui.copyUrlButton.addEventListener("click", async () => {
-    await window.miniBeam.copy(state.currentUrl || state.inviteUrl);
-    flash(ui.copyUrlButton, "Скопировано", "Копировать ссылку");
   });
 
   ui.addressForm.addEventListener("submit", (event) => {
@@ -103,10 +97,7 @@ function bindUi() {
   ui.backButton.addEventListener("click", () => window.miniBeam.back());
   ui.forwardButton.addEventListener("click", () => window.miniBeam.forward());
   ui.reloadButton.addEventListener("click", () => window.miniBeam.reload());
-  ui.homeButton.addEventListener("click", showHome);
   ui.newTabButton.addEventListener("click", showHome);
-  ui.zoomOutButton.addEventListener("click", () => setZoom(state.zoom - 0.1));
-  ui.zoomInButton.addEventListener("click", () => setZoom(state.zoom + 0.1));
 
   ui.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -205,12 +196,6 @@ function showHome() {
   ui.reloadButton.disabled = true;
   setStatus("Готово");
   window.miniBeam.home();
-}
-
-function setZoom(value) {
-  state.zoom = Math.min(1.4, Math.max(0.7, Number(value.toFixed(1))));
-  ui.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
-  window.miniBeam.zoom(state.zoom);
 }
 
 function setOverlay(message) {

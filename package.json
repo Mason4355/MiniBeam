@@ -6,8 +6,10 @@
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "check": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/server/room-server.js && node --check src/renderer/app.js",
+    "start": "npm run client",
+    "server": "node src/server/standalone.js",
+    "client": "electron .",
+    "check": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/server/room-server.js && node --check src/server/standalone.js && node --check src/renderer/app.js",
     "dist": "electron-builder --win portable"
   },
   "dependencies": {
