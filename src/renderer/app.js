@@ -1,27 +1,26 @@
-const elements = {
-  roomTitle: document.querySelector("#roomTitle"),
-  serverUrl: document.querySelector("#serverUrl"),
-  copyRoomButton: document.querySelector("#copyRoomButton"),
-  participantCount: document.querySelector("#participantCount"),
+const ui = {
+  roomLabel: document.querySelector("#roomLabel"),
+  inviteUrl: document.querySelector("#inviteUrl"),
+  copyInviteButton: document.querySelector("#copyInviteButton"),
   participants: document.querySelector("#participants"),
-  browserForm: document.querySelector("#browserForm"),
-  homeSearchForm: document.querySelector("#homeSearchForm"),
+  tabTitle: document.querySelector("#tabTitle"),
+  newTabButton: document.querySelector("#newTabButton"),
+  addressForm: document.querySelector("#addressForm"),
   addressInput: document.querySelector("#addressInput"),
-  homeSearchInput: document.querySelector("#homeSearchInput"),
-  homeScreen: document.querySelector("#homeScreen"),
-  browserStatus: document.querySelector("#browserStatus"),
   backButton: document.querySelector("#backButton"),
   forwardButton: document.querySelector("#forwardButton"),
   reloadButton: document.querySelector("#reloadButton"),
+  homeScreen: document.querySelector("#homeScreen"),
+  pageOverlay: document.querySelector("#pageOverlay"),
+  homeForm: document.querySelector("#homeForm"),
+  homeInput: document.querySelector("#homeInput"),
   homeButton: document.querySelector("#homeButton"),
-  copyUrlButton: document.querySelector("#copyUrlButton"),
+  statusText: document.querySelector("#statusText"),
+  adblockText: document.querySelector("#adblockText"),
   zoomOutButton: document.querySelector("#zoomOutButton"),
   zoomInButton: document.querySelector("#zoomInButton"),
   zoomLabel: document.querySelector("#zoomLabel"),
-  adblockStatus: document.querySelector("#adblockStatus"),
-  loadingOverlay: document.querySelector("#loadingOverlay"),
-  errorOverlay: document.querySelector("#errorOverlay"),
-  errorText: document.querySelector("#errorText"),
+  copyUrlButton: document.querySelector("#copyUrlButton"),
   messages: document.querySelector("#messages"),
   chatForm: document.querySelector("#chatForm"),
   chatInput: document.querySelector("#chatInput")
@@ -30,199 +29,163 @@ const elements = {
 const state = {
   roomCode: "",
   inviteUrl: "",
-  socket: null,
-  selfId: "",
   currentUrl: "",
-  syncingNavigation: false,
-  zoomFactor: 1,
-  lastBroadcastUrl: "",
-  browserReady: Boolean(window.miniBeam?.browserNavigate)
+  selfId: "",
+  socket: null,
+  zoom: 1,
+  syncing: false,
+  lastBroadcastUrl: ""
 };
 
-bootstrap();
+init();
 
-async function bootstrap() {
-  const serverInfo = await window.miniBeam.getServerInfo();
-  const params = new URLSearchParams(window.location.search);
-  state.roomCode = params.get("room") || serverInfo.roomCode;
-  state.inviteUrl = serverInfo.lanUrl;
+async function init() {
+  const info = await window.miniBeam.getServerInfo();
+  const params = new URLSearchParams(location.search);
+  state.roomCode = params.get("room") || info.roomCode;
+  state.inviteUrl = info.lanUrl;
 
-  elements.roomTitle.textContent = `Комната ${state.roomCode}`;
-  elements.serverUrl.textContent = serverInfo.lanUrl;
-
-  const name = localStorage.getItem("minibeam:name") || createGuestName();
-  localStorage.setItem("minibeam:name", name);
+  ui.roomLabel.textContent = `Комната ${state.roomCode}`;
+  ui.inviteUrl.textContent = info.lanUrl;
 
   state.socket = io({
     auth: {
       room: state.roomCode,
-      name,
-      host: window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"
+      name: localStorage.getItem("minibeam:name") || createName(),
+      host: location.hostname === "127.0.0.1" || location.hostname === "localhost"
     }
   });
 
-  wireSocket();
-  wireUi();
-  wireNativeBrowser();
-  updateNavigationButtons({ canGoBack: false, canGoForward: false });
-
-  if (!state.browserReady) {
-    elements.browserStatus.textContent = "Встроенный браузер доступен только в MiniBeam.exe";
-  }
+  bindSocket();
+  bindUi();
+  bindBrowser();
 }
 
-function wireSocket() {
-  state.socket.on("room:error", (message) => {
-    elements.browserStatus.textContent = message;
-  });
-
+function bindSocket() {
   state.socket.on("room:state", (room) => {
     state.selfId = room.selfId;
     renderParticipants(room.participants);
     renderMessages(room.messages);
-    if (room.browserUrl) {
-      navigateBrowser(room.browserUrl, false);
-    }
+    if (room.browserUrl) navigate(room.browserUrl, false);
   });
 
+  state.socket.on("room:error", (message) => setStatus(message));
   state.socket.on("participants:update", renderParticipants);
-  state.socket.on("browser:navigate", (url) => navigateBrowser(url, false));
+  state.socket.on("browser:navigate", (url) => navigate(url, false));
   state.socket.on("chat:message", appendMessage);
 }
 
-function wireUi() {
-  elements.copyRoomButton.addEventListener("click", async () => {
-    await window.miniBeam.copyText(`${state.roomCode} ${state.inviteUrl}`);
-    flashButton(elements.copyRoomButton, "Скопировано", "Скопировать код");
+function bindUi() {
+  ui.copyInviteButton.addEventListener("click", async () => {
+    await window.miniBeam.copy(`${state.roomCode} ${state.inviteUrl}`);
+    flash(ui.copyInviteButton, "Скопировано", "Копировать приглашение");
   });
 
-  elements.copyUrlButton.addEventListener("click", async () => {
-    await window.miniBeam.copyText(state.currentUrl || state.inviteUrl);
-    flashButton(elements.copyUrlButton, "Скопировано", "Копировать ссылку");
+  ui.copyUrlButton.addEventListener("click", async () => {
+    await window.miniBeam.copy(state.currentUrl || state.inviteUrl);
+    flash(ui.copyUrlButton, "Скопировано", "Копировать ссылку");
   });
 
-  elements.browserForm.addEventListener("submit", (event) => {
+  ui.addressForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    navigateBrowser(elements.addressInput.value, true);
+    navigate(ui.addressInput.value, true);
   });
 
-  elements.homeSearchForm.addEventListener("submit", (event) => {
+  ui.homeForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    navigateBrowser(elements.homeSearchInput.value, true);
+    navigate(ui.homeInput.value, true);
   });
 
   document.querySelectorAll("[data-url]").forEach((button) => {
-    button.addEventListener("click", () => navigateBrowser(button.dataset.url, true));
+    button.addEventListener("click", () => navigate(button.dataset.url, true));
   });
 
-  elements.backButton.addEventListener("click", () => {
-    if (state.browserReady) window.miniBeam.browserBack();
-  });
+  ui.backButton.addEventListener("click", () => window.miniBeam.back());
+  ui.forwardButton.addEventListener("click", () => window.miniBeam.forward());
+  ui.reloadButton.addEventListener("click", () => window.miniBeam.reload());
+  ui.homeButton.addEventListener("click", showHome);
+  ui.newTabButton.addEventListener("click", showHome);
+  ui.zoomOutButton.addEventListener("click", () => setZoom(state.zoom - 0.1));
+  ui.zoomInButton.addEventListener("click", () => setZoom(state.zoom + 0.1));
 
-  elements.forwardButton.addEventListener("click", () => {
-    if (state.browserReady) window.miniBeam.browserForward();
-  });
-
-  elements.reloadButton.addEventListener("click", () => {
-    if (state.browserReady && state.currentUrl) window.miniBeam.browserReload();
-  });
-
-  elements.homeButton.addEventListener("click", () => showHome());
-  elements.zoomOutButton.addEventListener("click", () => setZoom(state.zoomFactor - 0.1));
-  elements.zoomInButton.addEventListener("click", () => setZoom(state.zoomFactor + 0.1));
-
-  window.miniBeam.onOpenUrl((url) => navigateBrowser(url, true));
-
-  elements.chatForm.addEventListener("submit", (event) => {
+  ui.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const message = elements.chatInput.value.trim();
-    if (!message) return;
-    state.socket.emit("chat:message", message);
-    elements.chatInput.value = "";
+    const text = ui.chatInput.value.trim();
+    if (!text) return;
+    state.socket.emit("chat:message", text);
+    ui.chatInput.value = "";
   });
 }
 
-function wireNativeBrowser() {
-  if (!state.browserReady) return;
-
+function bindBrowser() {
   window.miniBeam.onBrowserEvent((event) => {
     if (event.type === "loading") {
-      elements.browserStatus.textContent = event.loading ? "Загрузка..." : "Готово";
-      elements.loadingOverlay.hidden = true;
+      setStatus(event.loading ? "Загрузка..." : "Готово");
       return;
     }
 
-    if (event.type === "load-error") {
-      window.miniBeam.browserHome();
-      elements.homeScreen.hidden = false;
-      elements.errorOverlay.hidden = false;
-      elements.errorText.textContent = event.errorDescription || "Попробуйте обновить или открыть другую ссылку.";
-      elements.browserStatus.textContent = "Ошибка загрузки";
-      return;
-    }
-
-    if (event.type === "adblock") {
-      elements.adblockStatus.textContent = `Блок: ${event.blocked}`;
-      elements.adblockStatus.title = event.url || "Blocked ad/tracker request";
-      return;
-    }
-
-    if (event.type === "new-window") {
-      navigateBrowser(event.url, true);
+    if (event.type === "navigation-state") {
+      ui.backButton.disabled = !event.canGoBack;
+      ui.forwardButton.disabled = !event.canGoForward;
+      ui.reloadButton.disabled = !state.currentUrl;
       return;
     }
 
     if (event.type === "title") {
       const title = event.title || "New tab";
-      const tab = document.querySelector(".tab.active");
-      tab.textContent = title;
-      tab.title = title;
-      return;
-    }
-
-    if (event.type === "navigation-state") {
-      updateNavigationButtons(event);
+      ui.tabTitle.textContent = title;
+      ui.tabTitle.title = title;
       return;
     }
 
     if (event.type === "navigated") {
-      handleBrowserUrl(event.url);
+      onNavigated(event.url);
+      return;
+    }
+
+    if (event.type === "new-window") {
+      navigate(event.url, true);
+      return;
+    }
+
+    if (event.type === "load-error") {
+      setOverlay(`Страница не открылась: ${event.errorDescription || "ошибка загрузки"}`);
+      setStatus("Ошибка загрузки");
+      return;
+    }
+
+    if (event.type === "adblock") {
+      ui.adblockText.textContent = `Блок: ${event.count}`;
+      ui.adblockText.title = event.url || "";
     }
   });
 }
 
-async function navigateBrowser(value, shouldBroadcast) {
+async function navigate(value, broadcast) {
   const url = normalizeUrl(value);
   if (!url) return;
 
   state.currentUrl = url;
-  elements.addressInput.value = url;
-  elements.homeScreen.hidden = true;
-  elements.errorOverlay.hidden = true;
-  elements.loadingOverlay.hidden = true;
+  ui.addressInput.value = url;
+  ui.homeScreen.hidden = true;
+  ui.pageOverlay.hidden = true;
+  state.syncing = !broadcast;
+  await window.miniBeam.navigate(url);
 
-  if (!state.browserReady) {
-    elements.browserStatus.textContent = "Откройте эту комнату в MiniBeam.exe";
-    return;
-  }
-
-  state.syncingNavigation = !shouldBroadcast;
-  await window.miniBeam.browserNavigate(url);
-
-  if (shouldBroadcast) {
+  if (broadcast) {
     state.lastBroadcastUrl = url;
     state.socket.emit("browser:navigate", url);
   }
 }
 
-function handleBrowserUrl(url) {
+function onNavigated(url) {
   if (!url || url === "about:blank") return;
-
   state.currentUrl = url;
-  elements.addressInput.value = url;
+  ui.addressInput.value = url;
+  ui.reloadButton.disabled = false;
 
-  if (state.syncingNavigation) {
-    state.syncingNavigation = false;
+  if (state.syncing) {
+    state.syncing = false;
     return;
   }
 
@@ -233,87 +196,76 @@ function handleBrowserUrl(url) {
 
 function showHome() {
   state.currentUrl = "";
-  elements.addressInput.value = "";
-  elements.homeSearchInput.value = "";
-  elements.homeScreen.hidden = false;
-  elements.loadingOverlay.hidden = true;
-  elements.errorOverlay.hidden = true;
-  elements.browserStatus.textContent = "Готово";
-  if (state.browserReady) {
-    window.miniBeam.browserHome();
-  }
+  ui.addressInput.value = "";
+  ui.homeInput.value = "";
+  ui.homeScreen.hidden = false;
+  ui.pageOverlay.hidden = true;
+  ui.tabTitle.textContent = "New tab";
+  ui.tabTitle.title = "New tab";
+  ui.reloadButton.disabled = true;
+  setStatus("Готово");
+  window.miniBeam.home();
 }
 
-function updateNavigationButtons(navigationState) {
-  elements.backButton.disabled = !navigationState?.canGoBack;
-  elements.forwardButton.disabled = !navigationState?.canGoForward;
-  elements.reloadButton.disabled = !state.currentUrl;
+function setZoom(value) {
+  state.zoom = Math.min(1.4, Math.max(0.7, Number(value.toFixed(1))));
+  ui.zoomLabel.textContent = `${Math.round(state.zoom * 100)}%`;
+  window.miniBeam.zoom(state.zoom);
 }
 
-function setZoom(nextZoom) {
-  state.zoomFactor = Math.min(1.4, Math.max(0.7, Number(nextZoom.toFixed(1))));
-  elements.zoomLabel.textContent = `${Math.round(state.zoomFactor * 100)}%`;
-  if (state.browserReady) {
-    window.miniBeam.browserZoom(state.zoomFactor);
-  }
+function setOverlay(message) {
+  ui.pageOverlay.textContent = message;
+  ui.pageOverlay.hidden = false;
+}
+
+function setStatus(text) {
+  ui.statusText.textContent = text;
 }
 
 function renderParticipants(participants) {
-  elements.participantCount.textContent = participants.length;
-  elements.participants.innerHTML = participants.map((participant) => `
+  ui.participants.innerHTML = participants.map((participant) => `
     <article class="participant" title="${escapeHtml(participant.name)}: ${escapeHtml(participant.status)}">
-      <div class="avatar">${escapeHtml(participant.avatar)}</div>
-      <div>
-        <strong>${escapeHtml(participant.name)}${participant.id === state.selfId ? " · Вы" : ""}</strong>
-        <span class="status">${escapeHtml(participant.status)}</span>
-      </div>
+      <span>${escapeHtml(participant.avatar)}</span>
     </article>
   `).join("");
 }
 
 function renderMessages(messages) {
-  elements.messages.innerHTML = "";
-  for (const message of messages) {
-    appendMessage(message);
-  }
+  ui.messages.innerHTML = "";
+  messages.forEach(appendMessage);
 }
 
 function appendMessage(message) {
-  const article = document.createElement("article");
-  article.className = "message";
-  article.innerHTML = `
+  const item = document.createElement("article");
+  item.className = "message";
+  item.innerHTML = `
     <strong>${escapeHtml(message.author)}</strong>
     <time>${new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
     <p>${escapeHtml(message.text)}</p>
   `;
-  elements.messages.append(article);
-  elements.messages.scrollTop = elements.messages.scrollHeight;
+  ui.messages.append(item);
+  ui.messages.scrollTop = ui.messages.scrollHeight;
 }
 
 function normalizeUrl(value) {
   const text = String(value || "").trim();
   if (!text) return "";
-
-  if (/^https?:\/\//i.test(text)) {
-    return text;
-  }
-
-  if (text.includes(".") && !text.includes(" ")) {
-    return `https://${text}`;
-  }
-
+  if (/^https?:\/\//i.test(text)) return text;
+  if (text.includes(".") && !text.includes(" ")) return `https://${text}`;
   return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
 }
 
-function flashButton(button, text, originalText) {
-  button.textContent = text;
-  setTimeout(() => {
-    button.textContent = originalText;
-  }, 1300);
+function createName() {
+  const name = `Guest ${Math.floor(100 + Math.random() * 900)}`;
+  localStorage.setItem("minibeam:name", name);
+  return name;
 }
 
-function createGuestName() {
-  return `Guest ${Math.floor(100 + Math.random() * 900)}`;
+function flash(button, text, original) {
+  button.textContent = text;
+  setTimeout(() => {
+    button.textContent = original;
+  }, 1200);
 }
 
 function escapeHtml(value) {

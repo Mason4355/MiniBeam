@@ -7,91 +7,76 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <div class="app">
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">M</span>
           <div>
-            <p class="eyebrow">MiniBeam</p>
-            <h1 id="roomTitle">Комната</h1>
+            <div class="brand-name">MiniBeam</div>
+            <div id="roomLabel" class="room-label">Комната</div>
           </div>
         </div>
         <div class="invite">
-          <span id="serverUrl">Запуск сервера...</span>
-          <button id="copyRoomButton" type="button">Скопировать код</button>
+          <span id="inviteUrl">Запуск сервера...</span>
+          <button id="copyInviteButton" type="button">Копировать приглашение</button>
         </div>
       </header>
 
       <main class="layout">
-        <aside class="panel participants-panel">
-          <div class="panel-header">
-            <h2>Участники</h2>
-            <span id="participantCount">0</span>
-          </div>
+        <aside class="participants-rail">
           <div id="participants" class="participants"></div>
         </aside>
 
-        <section class="beam">
-          <div class="browser-shell">
-            <div class="browser-tabs">
-              <button class="tab active" type="button" title="Current page">New tab</button>
-              <button class="tab-add" type="button">+</button>
+        <section class="room">
+          <div class="browser-chrome">
+            <div class="tabs">
+              <button id="tabTitle" class="tab active" type="button">New tab</button>
+              <button id="newTabButton" class="tab-plus" type="button">+</button>
             </div>
 
-            <form id="browserForm" class="browser-toolbar">
-              <button id="backButton" class="icon-button" type="button" aria-label="Назад">‹</button>
-              <button id="forwardButton" class="icon-button" type="button" aria-label="Вперёд">›</button>
-              <button id="reloadButton" class="icon-button" type="button" aria-label="Обновить">↻</button>
-              <input id="addressInput" type="text" autocomplete="off" placeholder="Search DuckDuckGo or type a URL" />
+            <form id="addressForm" class="addressbar">
+              <button id="backButton" class="circle-button" type="button" aria-label="Назад">‹</button>
+              <button id="forwardButton" class="circle-button" type="button" aria-label="Вперёд">›</button>
+              <button id="reloadButton" class="circle-button" type="button" aria-label="Обновить">↻</button>
+              <input id="addressInput" type="text" autocomplete="off" placeholder="Введите адрес или поисковый запрос" />
               <button class="go-button" type="submit">Go</button>
             </form>
 
-            <div class="browser-viewport">
-              <div id="loadingOverlay" class="browser-overlay" hidden>
-                <span class="spinner"></span>
-                <strong>Загрузка страницы</strong>
-              </div>
-              <div id="errorOverlay" class="browser-overlay error-overlay" hidden>
-                <strong>Страница не открылась</strong>
-                <span id="errorText">Попробуйте обновить или открыть другую ссылку.</span>
-              </div>
+            <div class="viewport">
               <div id="homeScreen" class="home-screen">
                 <div class="home-logo">
                   <span class="home-mark">M</span>
                   <strong>MINIBEAM</strong>
                 </div>
-                <form id="homeSearchForm" class="home-search">
-                  <input id="homeSearchInput" type="text" autocomplete="off" placeholder="Search DuckDuckGo or type a URL" />
+                <form id="homeForm" class="home-search">
+                  <input id="homeInput" type="text" autocomplete="off" placeholder="Search DuckDuckGo or type a URL" />
                 </form>
                 <div class="shortcuts">
                   <button type="button" data-url="https://www.youtube.com">YouTube</button>
+                  <button type="button" data-url="https://hd.kinopoisk.ru">Кинопоиск</button>
                   <button type="button" data-url="https://soundcloud.com">SoundCloud</button>
-                  <button type="button" data-url="https://www.newgrounds.com">Newgrounds</button>
                   <button type="button" data-url="https://duckduckgo.com">DuckDuckGo</button>
                   <button type="button" data-url="https://neal.fun/infinite-craft/">Infinite Craft</button>
                 </div>
               </div>
-
-              <div id="nativeBrowserSlot" class="native-browser-slot"></div>
+              <div id="pageOverlay" class="page-overlay" hidden></div>
             </div>
           </div>
 
-          <div class="bottom-controls">
+          <footer class="bottombar">
             <button id="homeButton" type="button">Home</button>
-            <span id="browserStatus">Готово</span>
+            <span id="statusText">Готово</span>
+            <span id="adblockText" class="shield">Блок: 0</span>
             <div class="spacer"></div>
             <button id="zoomOutButton" type="button">-</button>
             <span id="zoomLabel">100%</span>
             <button id="zoomInButton" type="button">+</button>
-            <span id="adblockStatus" class="shield">Блок: 0</span>
             <button id="copyUrlButton" type="button">Копировать ссылку</button>
-          </div>
+          </footer>
         </section>
 
-        <aside class="panel chat-panel">
-          <div class="panel-header">
-            <h2>Чат</h2>
-          </div>
+        <aside class="chat-panel">
+          <header>Чат</header>
           <div id="messages" class="messages"></div>
           <form id="chatForm" class="chat-form">
             <input id="chatInput" type="text" maxlength="600" placeholder="Сообщение" />

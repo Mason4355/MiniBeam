@@ -1,15 +1,13 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("miniBeam", {
-  getServerInfo: () => ipcRenderer.invoke("server:info"),
-  copyText: (text) => ipcRenderer.invoke("clipboard:copy", text),
-  openExternal: (url) => ipcRenderer.invoke("external:open", url),
-  onOpenUrl: (callback) => ipcRenderer.on("browser:open-url", (_event, url) => callback(url)),
-  browserNavigate: (url) => ipcRenderer.invoke("native-browser:navigate", url),
-  browserHome: () => ipcRenderer.invoke("native-browser:home"),
-  browserBack: () => ipcRenderer.invoke("native-browser:back"),
-  browserForward: () => ipcRenderer.invoke("native-browser:forward"),
-  browserReload: () => ipcRenderer.invoke("native-browser:reload"),
-  browserZoom: (zoomFactor) => ipcRenderer.invoke("native-browser:zoom", zoomFactor),
-  onBrowserEvent: (callback) => ipcRenderer.on("native-browser:event", (_event, payload) => callback(payload))
+  getServerInfo: () => ipcRenderer.invoke("app:server-info"),
+  copy: (text) => ipcRenderer.invoke("app:copy", text),
+  navigate: (url) => ipcRenderer.invoke("browser:navigate", url),
+  home: () => ipcRenderer.invoke("browser:home"),
+  back: () => ipcRenderer.invoke("browser:back"),
+  forward: () => ipcRenderer.invoke("browser:forward"),
+  reload: () => ipcRenderer.invoke("browser:reload"),
+  zoom: (value) => ipcRenderer.invoke("browser:zoom", value),
+  onBrowserEvent: (callback) => ipcRenderer.on("browser:event", (_event, payload) => callback(payload))
 });

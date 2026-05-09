@@ -1,19 +1,14 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "PATH=%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs;%PATH%"
 
-echo Building MiniBeam portable EXE...
-echo Output: release\MiniBeam.exe
+echo [MiniBeam] Portable build is paused.
 echo.
-
-npm run dist
-
+echo We are using development mode while patching.
+echo Run 02-start-dev.bat to test the app.
 echo.
-if errorlevel 1 (
-  echo Build failed.
-) else (
-  echo Build complete: release\MiniBeam.exe
-)
-
+echo Later, when ready, run:
+echo npm run dist
 echo.
 pause

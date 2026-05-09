@@ -1,21 +1,69 @@
+const fs = require("node:fs/promises");
 const path = require("node:path");
-const { app, BrowserView, BrowserWindow, ipcMain, shell } = require("electron");
-const { createMiniBeamServer } = require("../server/server");
+const { app, BrowserView, BrowserWindow, ipcMain, session } = require("electron");
+const { createRoomServer, normalizeUrl } = require("../server/room-server");
+
+const BROWSER_PARTITION = "persist:minibeam-browser";
 
 let mainWindow;
 let browserView;
-let miniBeamServer;
+let roomServer;
 let serverInfo;
 let browserVisible = false;
-let browserZoom = 1;
-let blockedRequestCount = 0;
+let zoomFactor = 1;
+let blockedCount = 0;
+let isQuitting = false;
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
+app.whenReady().then(async () => {
+  installAdBlocker(session.fromPartition(BROWSER_PARTITION));
+  await createWindow();
+});
+
+app.on("window-all-closed", () => app.quit());
+
+app.on("before-quit", async (event) => {
+  if (isQuitting) return;
+  event.preventDefault();
+  isQuitting = true;
+  await shutdown();
+  app.exit(0);
+});
+
+async function shutdown() {
+  if (browserView) {
+    try {
+      browserView.webContents.stop();
+      browserView.webContents.close({ waitForBeforeUnload: false });
+    } catch {}
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        mainWindow.setBrowserView(null);
+      } catch {}
+    }
+    browserView = null;
+    browserVisible = false;
+  }
+
+  try {
+    await session.fromPartition(BROWSER_PARTITION).clearCache();
+    await session.fromPartition(BROWSER_PARTITION).clearStorageData({
+      storages: ["appcache", "cookies", "filesystem", "indexdb", "localstorage", "shadercache", "websql", "serviceworkers", "cachestorage"]
+    });
+  } catch {}
+
+  if (!roomServer) return;
+  const server = roomServer;
+  roomServer = null;
+  await server.stop();
+  await cleanupRuntimeTrash();
+}
+
 async function createWindow() {
   const staticDir = path.join(__dirname, "..", "renderer");
-  miniBeamServer = createMiniBeamServer({ staticDir });
-  serverInfo = await miniBeamServer.start(0);
+  roomServer = createRoomServer({ staticDir });
+  serverInfo = await roomServer.start(0);
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -23,100 +71,32 @@ async function createWindow() {
     minWidth: 1120,
     minHeight: 680,
     title: "MiniBeam",
-    backgroundColor: "#090b12",
+    backgroundColor: "#0b0811",
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
-      webviewTag: true
+      sandbox: false
     }
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    mainWindow.webContents.send("browser:open-url", url);
-    return { action: "deny" };
-  });
-
   await mainWindow.loadURL(serverInfo.localUrl);
-  createNativeBrowserView();
+  createBrowserView();
   mainWindow.on("resize", updateBrowserBounds);
   mainWindow.on("maximize", updateBrowserBounds);
   mainWindow.on("unmaximize", updateBrowserBounds);
 }
 
-app.whenReady().then(createWindow);
-
-app.on("window-all-closed", () => {
-  app.quit();
-});
-
-app.on("before-quit", async (event) => {
-  if (!miniBeamServer) return;
-
-  event.preventDefault();
-  const server = miniBeamServer;
-  miniBeamServer = null;
-  await server.stop();
-  app.exit(0);
-});
-
-ipcMain.handle("server:info", () => serverInfo);
-
-ipcMain.handle("clipboard:copy", async (_event, text) => {
-  const { clipboard } = require("electron");
-  clipboard.writeText(String(text || ""));
-  return true;
-});
-
-ipcMain.handle("external:open", async (_event, url) => {
-  await shell.openExternal(url);
-});
-
-ipcMain.handle("native-browser:navigate", async (_event, url) => {
-  if (!browserView) createNativeBrowserView();
-  showBrowserView();
-  await browserView.webContents.loadURL(url);
-});
-
-ipcMain.handle("native-browser:home", async () => {
-  hideBrowserView();
-});
-
-ipcMain.handle("native-browser:back", () => {
-  if (browserView?.webContents.canGoBack()) {
-    browserView.webContents.goBack();
-  }
-});
-
-ipcMain.handle("native-browser:forward", () => {
-  if (browserView?.webContents.canGoForward()) {
-    browserView.webContents.goForward();
-  }
-});
-
-ipcMain.handle("native-browser:reload", () => {
-  if (browserView) {
-    browserView.webContents.reload();
-  }
-});
-
-ipcMain.handle("native-browser:zoom", (_event, zoomFactor) => {
-  browserZoom = Math.min(1.4, Math.max(0.7, Number(zoomFactor) || 1));
-  if (browserView) {
-    browserView.webContents.setZoomFactor(browserZoom);
-  }
-});
-
-function createNativeBrowserView() {
-  if (browserView || !mainWindow) return;
+function createBrowserView() {
+  if (browserView) return;
 
   browserView = new BrowserView({
     webPreferences: {
-      partition: "persist:minibeam-room",
-      nodeIntegration: false,
+      partition: BROWSER_PARTITION,
       contextIsolation: true,
-      sandbox: true
+      nodeIntegration: false,
+      sandbox: true,
+      plugins: true
     }
   });
 
@@ -124,15 +104,11 @@ function createNativeBrowserView() {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
   );
 
-  installAdBlocker(browserView.webContents.session);
-
   browserView.webContents.setWindowOpenHandler(({ url }) => {
     if (shouldBlockUrl(url, "popup")) {
-      blockedRequestCount += 1;
-      sendBrowserEvent("adblock", { blocked: blockedRequestCount, url });
+      notifyBlocked(url);
       return { action: "deny" };
     }
-
     sendBrowserEvent("new-window", { url });
     return { action: "deny" };
   });
@@ -140,93 +116,126 @@ function createNativeBrowserView() {
   browserView.webContents.on("did-start-loading", () => sendBrowserEvent("loading", { loading: true }));
   browserView.webContents.on("did-stop-loading", () => {
     sendBrowserEvent("loading", { loading: false });
-    sendBrowserEvent("navigation-state", getNavigationState());
+    sendNavigationState();
   });
-  browserView.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
-    if (errorCode === -3) return;
+  browserView.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return;
     sendBrowserEvent("load-error", { errorDescription, url: validatedURL });
   });
   browserView.webContents.on("did-navigate", (_event, url) => {
     sendBrowserEvent("navigated", { url });
-    sendBrowserEvent("navigation-state", getNavigationState());
+    sendNavigationState();
   });
   browserView.webContents.on("did-navigate-in-page", (_event, url) => {
     sendBrowserEvent("navigated", { url });
-    sendBrowserEvent("navigation-state", getNavigationState());
+    sendNavigationState();
   });
   browserView.webContents.on("page-title-updated", (_event, title) => sendBrowserEvent("title", { title }));
 }
 
-function showBrowserView() {
-  if (!browserView || !mainWindow || browserVisible) {
-    updateBrowserBounds();
-    return;
-  }
+ipcMain.handle("app:server-info", () => serverInfo);
+ipcMain.handle("app:copy", (_event, text) => {
+  require("electron").clipboard.writeText(String(text || ""));
+});
 
-  mainWindow.setBrowserView(browserView);
-  browserVisible = true;
-  browserView.webContents.setZoomFactor(browserZoom);
+ipcMain.handle("browser:navigate", async (_event, rawUrl) => {
+  const url = normalizeUrl(rawUrl);
+  if (!url) return;
+  showBrowser();
+  await browserView.webContents.loadURL(url);
+});
+
+ipcMain.handle("browser:home", () => hideBrowser());
+ipcMain.handle("browser:back", () => {
+  if (browserView?.webContents.canGoBack()) browserView.webContents.goBack();
+});
+ipcMain.handle("browser:forward", () => {
+  if (browserView?.webContents.canGoForward()) browserView.webContents.goForward();
+});
+ipcMain.handle("browser:reload", () => {
+  if (browserView) browserView.webContents.reload();
+});
+ipcMain.handle("browser:zoom", (_event, value) => {
+  zoomFactor = Math.min(1.4, Math.max(0.7, Number(value) || 1));
+  if (browserView) browserView.webContents.setZoomFactor(zoomFactor);
+});
+
+function showBrowser() {
+  if (!mainWindow || !browserView) return;
+  if (!browserVisible) {
+    mainWindow.setBrowserView(browserView);
+    browserVisible = true;
+  }
+  browserView.webContents.setZoomFactor(zoomFactor);
   updateBrowserBounds();
 }
 
-function hideBrowserView() {
-  if (!mainWindow || !browserView || !browserVisible) return;
+function hideBrowser() {
+  if (!mainWindow || !browserVisible) return;
   mainWindow.setBrowserView(null);
   browserVisible = false;
 }
 
 function updateBrowserBounds() {
   if (!mainWindow || !browserView || !browserVisible) return;
-
   const [width, height] = mainWindow.getContentSize();
   const compact = width < 1180;
   const leftRail = compact ? 64 : 72;
-  const rightPanel = compact ? 280 : 320;
-  const topbar = 64;
-  const tabs = 42;
-  const toolbar = 56;
-  const bottom = 54;
+  const rightPanel = compact ? 284 : 320;
+  const topbar = 60;
+  const browserTabs = 42;
+  const browserToolbar = 54;
+  const bottomBar = 52;
 
   browserView.setBounds({
     x: leftRail,
-    y: topbar + tabs + toolbar,
-    width: Math.max(240, width - leftRail - rightPanel),
-    height: Math.max(180, height - topbar - tabs - toolbar - bottom)
+    y: topbar + browserTabs + browserToolbar,
+    width: Math.max(320, width - leftRail - rightPanel),
+    height: Math.max(240, height - topbar - browserTabs - browserToolbar - bottomBar)
   });
   browserView.setAutoResize({ width: true, height: true });
 }
 
-function sendBrowserEvent(type, payload = {}) {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("native-browser:event", { type, ...payload });
-  }
+function sendNavigationState() {
+  sendBrowserEvent("navigation-state", {
+    canGoBack: Boolean(browserView?.webContents.canGoBack()),
+    canGoForward: Boolean(browserView?.webContents.canGoForward())
+  });
 }
 
-function getNavigationState() {
-  if (!browserView) {
-    return { canGoBack: false, canGoForward: false };
+function sendBrowserEvent(type, payload = {}) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("browser:event", { type, ...payload });
   }
-
-  return {
-    canGoBack: browserView.webContents.canGoBack(),
-    canGoForward: browserView.webContents.canGoForward()
-  };
 }
 
 function installAdBlocker(targetSession) {
-  if (targetSession.__miniBeamAdBlockerInstalled) return;
-  targetSession.__miniBeamAdBlockerInstalled = true;
-
   targetSession.webRequest.onBeforeRequest((details, callback) => {
     const blocked = shouldBlockUrl(details.url, details.resourceType);
-
-    if (blocked) {
-      blockedRequestCount += 1;
-      sendBrowserEvent("adblock", { blocked: blockedRequestCount, url: details.url });
-    }
-
+    if (blocked) notifyBlocked(details.url);
     callback({ cancel: blocked });
   });
+}
+
+async function cleanupRuntimeTrash() {
+  const tempDir = path.join(app.getPath("temp"), "MiniBeam");
+  const candidates = [
+    path.join(app.getPath("userData"), "Cache"),
+    path.join(app.getPath("userData"), "Code Cache"),
+    path.join(app.getPath("userData"), "GPUCache"),
+    tempDir
+  ];
+
+  for (const target of candidates) {
+    try {
+      await fs.rm(target, { recursive: true, force: true });
+    } catch {}
+  }
+}
+
+function notifyBlocked(url) {
+  blockedCount += 1;
+  sendBrowserEvent("adblock", { count: blockedCount, url });
 }
 
 function shouldBlockUrl(rawUrl, resourceType = "") {
@@ -238,31 +247,16 @@ function shouldBlockUrl(rawUrl, resourceType = "") {
   }
 
   if (!["http:", "https:"].includes(parsed.protocol)) return false;
+  if (resourceType === "mainFrame") return false;
 
   const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
-  const path = `${parsed.pathname}${parsed.search}`.toLowerCase();
-  const full = `${host}${path}`;
+  const target = `${host}${parsed.pathname}${parsed.search}`.toLowerCase();
 
-  if (AD_HOST_PARTS.some((part) => host === part || host.endsWith(`.${part}`) || host.includes(part))) {
-    return true;
-  }
-
-  if (resourceType === "mainFrame") {
-    return false;
-  }
-
-  if (AD_PATH_PARTS.some((part) => full.includes(part))) {
-    return true;
-  }
-
-  if ((resourceType === "popup" || resourceType === "subFrame") && POPUP_HOST_HINTS.some((part) => full.includes(part))) {
-    return true;
-  }
-
-  return false;
+  return AD_HOSTS.some((item) => host === item || host.endsWith(`.${item}`) || host.includes(item)) ||
+    AD_PATTERNS.some((item) => target.includes(item));
 }
 
-const AD_HOST_PARTS = [
+const AD_HOSTS = [
   "doubleclick.net",
   "googlesyndication.com",
   "google-analytics.com",
@@ -270,65 +264,46 @@ const AD_HOST_PARTS = [
   "googletagservices.com",
   "adservice.google",
   "adnxs.com",
-  "adsystem.com",
   "adsafeprotected.com",
   "scorecardresearch.com",
-  "zedo.com",
   "taboola.com",
   "outbrain.com",
   "mgid.com",
-  "adskeeper.com",
   "criteo.com",
   "rubiconproject.com",
   "pubmatic.com",
   "openx.net",
   "smartadserver.com",
-  "yieldmo.com",
   "adform.net",
-  "advertising.com",
-  "adroll.com",
   "bidswitch.net",
   "exoclick.com",
   "popads.net",
   "propellerads.com",
-  "trafficjunky.net",
   "onclickads.net",
   "realsrv.com",
   "hilltopads.net",
-  "juicyads.com",
   "adsterra.com",
   "clickadu.com",
   "popcash.net",
-  "popunder",
-  "clickunder",
   "ad.mail.ru",
   "top.mail.ru",
   "an.yandex.ru",
   "mc.yandex.ru",
   "adfox.ru",
   "adriver.ru",
+  "mytarget.ru",
   "betweendigital.com",
   "buzzoola.com",
   "relap.io",
-  "sape.ru",
-  "otm-r.com",
-  "mytarget.ru",
-  "vk-ads",
-  "tns-counter.ru",
-  "rambler.ru/counter",
-  "livetex.ru",
   "jivosite.com"
 ];
 
-const AD_PATH_PARTS = [
+const AD_PATTERNS = [
   "/ads/",
-  "/ad/",
   "/advert",
-  "/advertising",
   "/banner",
   "/banners",
   "/prebid",
-  "/bidder",
   "/vast",
   "/vpaid",
   "/preroll",
@@ -337,24 +312,8 @@ const AD_PATH_PARTS = [
   "/counter",
   "/analytics",
   "/tracking",
-  "/track?",
-  "utm_source=ad",
-  "ad_type=",
-  "adunit",
   "adfox",
   "adriver",
   "yandex_rtb",
-  "googleads",
-  "googlesyndication"
-];
-
-const POPUP_HOST_HINTS = [
-  "ad",
-  "ads",
-  "click",
-  "offer",
-  "promo",
-  "push",
-  "traffic",
-  "under"
+  "googleads"
 ];
