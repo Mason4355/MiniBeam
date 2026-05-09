@@ -25,7 +25,7 @@
     "productName": "MiniBeam",
     "asar": true,
     "directories": {
-      "output": "portable"
+      "output": "release"
     },
     "files": [
       "src/**/*",

@@ -45,6 +45,7 @@ function createMiniBeamServer(options = {}) {
 
   const room = {
     code: roomCode,
+    browserUrl: "",
     videoUrl: "",
     isPlaying: false,
     currentTime: 0,
@@ -90,6 +91,13 @@ function createMiniBeamServer(options = {}) {
       updateStatus(socket.id, "Пауза");
       io.to(roomCode).emit("video:set", room.videoUrl);
       io.to(roomCode).emit("playback:update", playbackSnapshot(room));
+      io.to(roomCode).emit("participants:update", Array.from(room.participants.values()));
+    });
+
+    socket.on("browser:navigate", (url) => {
+      room.browserUrl = normalizeBrowserUrl(url);
+      updateStatus(socket.id, participant.isHost ? "Host browsing" : "Watching");
+      socket.to(roomCode).emit("browser:navigate", room.browserUrl);
       io.to(roomCode).emit("participants:update", Array.from(room.participants.values()));
     });
 
@@ -188,12 +196,28 @@ function createMiniBeamServer(options = {}) {
 function serializeRoom(room, selfId) {
   return {
     code: room.code,
+    browserUrl: room.browserUrl,
     videoUrl: room.videoUrl,
     playback: playbackSnapshot(room),
     participants: Array.from(room.participants.values()),
     messages: room.messages,
     selfId
   };
+}
+
+function normalizeBrowserUrl(url) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (value.includes(".") && !value.includes(" ")) {
+    return `https://${value}`;
+  }
+
+  return `https://duckduckgo.com/?q=${encodeURIComponent(value)}`;
 }
 
 function playbackSnapshot(room, type = "sync") {

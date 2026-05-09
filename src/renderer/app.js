@@ -4,15 +4,18 @@ const elements = {
   copyRoomButton: document.querySelector("#copyRoomButton"),
   participantCount: document.querySelector("#participantCount"),
   participants: document.querySelector("#participants"),
-  videoForm: document.querySelector("#videoForm"),
-  videoUrlInput: document.querySelector("#videoUrlInput"),
-  videoPlayer: document.querySelector("#videoPlayer"),
-  youtubeHost: document.querySelector("#youtubeHost"),
-  emptyState: document.querySelector("#emptyState"),
-  playPauseButton: document.querySelector("#playPauseButton"),
-  seekControl: document.querySelector("#seekControl"),
-  volumeControl: document.querySelector("#volumeControl"),
-  timeLabel: document.querySelector("#timeLabel"),
+  browserForm: document.querySelector("#browserForm"),
+  homeSearchForm: document.querySelector("#homeSearchForm"),
+  addressInput: document.querySelector("#addressInput"),
+  homeSearchInput: document.querySelector("#homeSearchInput"),
+  roomBrowser: document.querySelector("#roomBrowser"),
+  homeScreen: document.querySelector("#homeScreen"),
+  browserStatus: document.querySelector("#browserStatus"),
+  backButton: document.querySelector("#backButton"),
+  forwardButton: document.querySelector("#forwardButton"),
+  reloadButton: document.querySelector("#reloadButton"),
+  homeButton: document.querySelector("#homeButton"),
+  copyUrlButton: document.querySelector("#copyUrlButton"),
   messages: document.querySelector("#messages"),
   chatForm: document.querySelector("#chatForm"),
   chatInput: document.querySelector("#chatInput")
@@ -23,12 +26,9 @@ const state = {
   inviteUrl: "",
   socket: null,
   selfId: "",
-  syncing: false,
-  youtubeMode: false,
-  youtubePlayer: null,
-  youtubeReady: false,
-  youtubeApiPromise: null,
-  youtubeTimeTimer: null
+  currentUrl: "",
+  syncingNavigation: false,
+  browserReady: Boolean(elements.roomBrowser?.loadURL)
 };
 
 bootstrap();
@@ -55,93 +55,76 @@ async function bootstrap() {
 
   wireSocket();
   wireUi();
+  wireBrowser();
+
+  if (!state.browserReady) {
+    elements.browserStatus.textContent = "Встроенный браузер доступен только в Electron";
+  }
 }
 
 function wireSocket() {
   state.socket.on("room:error", (message) => {
-    elements.emptyState.innerHTML = `<strong>Ошибка комнаты</strong><span>${escapeHtml(message)}</span>`;
+    elements.browserStatus.textContent = message;
   });
 
   state.socket.on("room:state", (room) => {
     state.selfId = room.selfId;
     renderParticipants(room.participants);
     renderMessages(room.messages);
-    if (room.videoUrl) {
-      loadVideo(room.videoUrl, false);
+    if (room.browserUrl) {
+      navigateBrowser(room.browserUrl, false);
     }
-    applyPlayback(room.playback);
   });
 
   state.socket.on("participants:update", renderParticipants);
-  state.socket.on("video:set", (url) => loadVideo(url, false));
-  state.socket.on("playback:update", applyPlayback);
+  state.socket.on("browser:navigate", (url) => navigateBrowser(url, false));
   state.socket.on("chat:message", appendMessage);
 }
 
 function wireUi() {
   elements.copyRoomButton.addEventListener("click", async () => {
     await window.miniBeam.copyText(`${state.roomCode} ${state.inviteUrl}`);
-    elements.copyRoomButton.textContent = "Скопировано";
-    setTimeout(() => {
-      elements.copyRoomButton.textContent = "Скопировать код";
-    }, 1300);
+    flashButton(elements.copyRoomButton, "Скопировано", "Скопировать код");
   });
 
-  elements.videoForm.addEventListener("submit", (event) => {
+  elements.copyUrlButton.addEventListener("click", async () => {
+    await window.miniBeam.copyText(state.currentUrl || state.inviteUrl);
+    flashButton(elements.copyUrlButton, "Скопировано", "Копировать ссылку");
+  });
+
+  elements.browserForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const url = elements.videoUrlInput.value.trim();
-    if (!url) return;
-    loadVideo(url, true);
-    state.socket.emit("video:set", url);
+    navigateBrowser(elements.addressInput.value, true);
   });
 
-  elements.playPauseButton.addEventListener("click", () => {
-    if (state.youtubeMode) {
-      if (!state.youtubeReady) return;
-      const playerState = state.youtubePlayer.getPlayerState();
-      if (playerState === YT.PlayerState.PLAYING) {
-        state.youtubePlayer.pauseVideo();
-      } else {
-        state.youtubePlayer.playVideo();
-      }
-      return;
-    }
+  elements.homeSearchForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    navigateBrowser(elements.homeSearchInput.value, true);
+  });
 
-    if (elements.videoPlayer.paused) {
-      elements.videoPlayer.play();
-    } else {
-      elements.videoPlayer.pause();
+  document.querySelectorAll("[data-url]").forEach((button) => {
+    button.addEventListener("click", () => navigateBrowser(button.dataset.url, true));
+  });
+
+  elements.backButton.addEventListener("click", () => {
+    if (state.browserReady && elements.roomBrowser.canGoBack()) {
+      elements.roomBrowser.goBack();
     }
   });
 
-  elements.seekControl.addEventListener("input", () => {
-    if (state.youtubeMode) {
-      if (!state.youtubeReady) return;
-      state.youtubePlayer.seekTo(Number(elements.seekControl.value), true);
-      emitPlayback("seek");
-      return;
+  elements.forwardButton.addEventListener("click", () => {
+    if (state.browserReady && elements.roomBrowser.canGoForward()) {
+      elements.roomBrowser.goForward();
     }
-
-    elements.videoPlayer.currentTime = Number(elements.seekControl.value);
-    emitPlayback("seek");
   });
 
-  elements.volumeControl.addEventListener("input", () => {
-    const volume = Number(elements.volumeControl.value);
-    if (state.youtubeMode && state.youtubeReady) {
-      state.youtubePlayer.setVolume(Math.round(volume * 100));
-      emitPlayback("volume");
-      return;
+  elements.reloadButton.addEventListener("click", () => {
+    if (state.browserReady && state.currentUrl) {
+      elements.roomBrowser.reload();
     }
-
-    elements.videoPlayer.volume = volume;
-    emitPlayback("volume");
   });
 
-  elements.videoPlayer.addEventListener("play", () => emitPlayback("play"));
-  elements.videoPlayer.addEventListener("pause", () => emitPlayback("pause"));
-  elements.videoPlayer.addEventListener("timeupdate", updateTimeUi);
-  elements.videoPlayer.addEventListener("durationchange", updateTimeUi);
+  elements.homeButton.addEventListener("click", () => showHome());
 
   elements.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -152,89 +135,85 @@ function wireUi() {
   });
 }
 
-function loadVideo(url, shouldUpdateInput) {
-  if (shouldUpdateInput) {
-    elements.videoUrlInput.value = url;
-  }
+function wireBrowser() {
+  if (!state.browserReady) return;
 
-  const youtubeId = getYoutubeVideoId(url);
-  state.youtubeMode = Boolean(youtubeId);
-  elements.emptyState.hidden = true;
+  elements.roomBrowser.addEventListener("did-start-loading", () => {
+    elements.browserStatus.textContent = "Загрузка...";
+  });
 
-  if (state.youtubeMode) {
-    elements.videoPlayer.pause();
-    elements.videoPlayer.hidden = true;
-    setYoutubeHidden(false);
-    elements.playPauseButton.disabled = false;
-    elements.seekControl.disabled = false;
-    loadYoutubeVideo(youtubeId);
-    return;
-  }
+  elements.roomBrowser.addEventListener("did-stop-loading", () => {
+    elements.browserStatus.textContent = "Готово";
+    updateNavigationButtons();
+  });
 
-  setYoutubeHidden(true);
-  stopYoutubeTimer();
-  if (state.youtubePlayer) {
-    state.youtubePlayer.stopVideo();
-  }
-  elements.videoPlayer.hidden = false;
-  elements.playPauseButton.disabled = false;
-  elements.seekControl.disabled = false;
+  elements.roomBrowser.addEventListener("did-navigate", (event) => handleBrowserUrl(event.url));
+  elements.roomBrowser.addEventListener("did-navigate-in-page", (event) => handleBrowserUrl(event.url));
 
-  if (elements.videoPlayer.src !== url) {
-    elements.videoPlayer.src = url;
-    elements.videoPlayer.load();
-  }
-}
-
-function applyPlayback(playback) {
-  if (!playback) return;
-
-  if (state.youtubeMode) {
-    applyYoutubePlayback(playback);
-    return;
-  }
-
-  state.syncing = true;
-  elements.videoPlayer.volume = playback.volume;
-  elements.volumeControl.value = playback.volume;
-
-  if (Number.isFinite(playback.currentTime)) {
-    const drift = Math.abs(elements.videoPlayer.currentTime - playback.currentTime);
-    if (drift > 0.75) {
-      elements.videoPlayer.currentTime = playback.currentTime;
-    }
-  }
-
-  if (playback.isPlaying && elements.videoPlayer.paused) {
-    elements.videoPlayer.play().catch(() => {});
-  }
-
-  if (!playback.isPlaying && !elements.videoPlayer.paused) {
-    elements.videoPlayer.pause();
-  }
-
-  state.syncing = false;
-  updateTimeUi();
-}
-
-function emitPlayback(type) {
-  if (state.syncing) return;
-
-  state.socket.emit("playback:event", {
-    type,
-    currentTime: getCurrentTime(),
-    volume: getVolume()
+  elements.roomBrowser.addEventListener("page-title-updated", (event) => {
+    const title = event.title || "New tab";
+    document.querySelector(".tab.active").textContent = title.slice(0, 38);
   });
 }
 
-function updateTimeUi() {
-  const duration = getDuration();
-  const currentTime = getCurrentTime();
+function navigateBrowser(value, shouldBroadcast) {
+  const url = normalizeUrl(value);
+  if (!url) return;
 
-  elements.seekControl.max = Math.max(duration, 100);
-  elements.seekControl.value = currentTime;
-  elements.timeLabel.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
-  elements.playPauseButton.textContent = isPlaying() ? "Pause" : "Play";
+  state.currentUrl = url;
+  elements.addressInput.value = url;
+  elements.homeScreen.hidden = true;
+
+  if (!state.browserReady) {
+    elements.browserStatus.textContent = "Откройте эту комнату в MiniBeam.exe";
+    return;
+  }
+
+  state.syncingNavigation = !shouldBroadcast;
+  elements.roomBrowser.src = url;
+
+  if (shouldBroadcast) {
+    state.socket.emit("browser:navigate", url);
+  }
+}
+
+function handleBrowserUrl(url) {
+  if (!url || url === "about:blank") return;
+
+  state.currentUrl = url;
+  elements.addressInput.value = url;
+  updateNavigationButtons();
+
+  if (state.syncingNavigation) {
+    state.syncingNavigation = false;
+    return;
+  }
+
+  state.socket.emit("browser:navigate", url);
+}
+
+function showHome() {
+  state.currentUrl = "";
+  elements.addressInput.value = "";
+  elements.homeSearchInput.value = "";
+  elements.homeScreen.hidden = false;
+  elements.browserStatus.textContent = "Готово";
+  if (state.browserReady) {
+    elements.roomBrowser.src = "about:blank";
+  }
+}
+
+function updateNavigationButtons() {
+  if (!state.browserReady) {
+    elements.backButton.disabled = true;
+    elements.forwardButton.disabled = true;
+    elements.reloadButton.disabled = true;
+    return;
+  }
+
+  elements.backButton.disabled = !elements.roomBrowser.canGoBack();
+  elements.forwardButton.disabled = !elements.roomBrowser.canGoForward();
+  elements.reloadButton.disabled = !state.currentUrl;
 }
 
 function renderParticipants(participants) {
@@ -269,164 +248,30 @@ function appendMessage(message) {
   elements.messages.scrollTop = elements.messages.scrollHeight;
 }
 
-function loadYoutubeApi() {
-  if (window.YT?.Player) {
-    return Promise.resolve();
+function normalizeUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  if (/^https?:\/\//i.test(text)) {
+    return text;
   }
 
-  if (state.youtubeApiPromise) {
-    return state.youtubeApiPromise;
+  if (text.includes(".") && !text.includes(" ")) {
+    return `https://${text}`;
   }
 
-  state.youtubeApiPromise = new Promise((resolve) => {
-    window.onYouTubeIframeAPIReady = () => resolve();
-    const script = document.createElement("script");
-    script.src = "https://www.youtube.com/iframe_api";
-    document.head.append(script);
-  });
-
-  return state.youtubeApiPromise;
+  return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
 }
 
-async function loadYoutubeVideo(videoId) {
-  state.youtubeReady = false;
-  await loadYoutubeApi();
-
-  if (state.youtubePlayer) {
-    state.youtubePlayer.loadVideoById(videoId);
-    state.youtubePlayer.pauseVideo();
-    state.youtubeReady = true;
-    startYoutubeTimer();
-    return;
-  }
-
-  state.youtubePlayer = new YT.Player("youtubeHost", {
-    videoId,
-    playerVars: {
-      autoplay: 0,
-      controls: 0,
-      modestbranding: 1,
-      rel: 0
-    },
-    events: {
-      onReady: () => {
-        state.youtubeReady = true;
-        state.youtubePlayer.setVolume(Math.round(Number(elements.volumeControl.value) * 100));
-        startYoutubeTimer();
-      },
-      onStateChange: (event) => {
-        if (state.syncing) return;
-        if (event.data === YT.PlayerState.PLAYING) emitPlayback("play");
-        if (event.data === YT.PlayerState.PAUSED) emitPlayback("pause");
-        updateTimeUi();
-      }
-    }
-  });
-}
-
-function applyYoutubePlayback(playback) {
-  if (!state.youtubeReady || !state.youtubePlayer) return;
-
-  state.syncing = true;
-  state.youtubePlayer.setVolume(Math.round(playback.volume * 100));
-  elements.volumeControl.value = playback.volume;
-
-  const currentTime = state.youtubePlayer.getCurrentTime() || 0;
-  if (Math.abs(currentTime - playback.currentTime) > 0.75) {
-    state.youtubePlayer.seekTo(playback.currentTime, true);
-  }
-
-  if (playback.isPlaying) {
-    state.youtubePlayer.playVideo();
-  } else {
-    state.youtubePlayer.pauseVideo();
-  }
-
-  state.syncing = false;
-  updateTimeUi();
-}
-
-function startYoutubeTimer() {
-  stopYoutubeTimer();
-  state.youtubeTimeTimer = setInterval(updateTimeUi, 500);
-}
-
-function stopYoutubeTimer() {
-  if (state.youtubeTimeTimer) {
-    clearInterval(state.youtubeTimeTimer);
-    state.youtubeTimeTimer = null;
-  }
-}
-
-function getCurrentTime() {
-  if (state.youtubeMode && state.youtubeReady) {
-    return state.youtubePlayer.getCurrentTime() || 0;
-  }
-
-  return elements.videoPlayer.currentTime || 0;
-}
-
-function getDuration() {
-  if (state.youtubeMode && state.youtubeReady) {
-    return state.youtubePlayer.getDuration() || 0;
-  }
-
-  return Number.isFinite(elements.videoPlayer.duration) ? elements.videoPlayer.duration : 0;
-}
-
-function getVolume() {
-  if (state.youtubeMode && state.youtubeReady) {
-    return (state.youtubePlayer.getVolume() || 0) / 100;
-  }
-
-  return elements.videoPlayer.volume;
-}
-
-function isPlaying() {
-  if (state.youtubeMode && state.youtubeReady) {
-    return state.youtubePlayer.getPlayerState() === YT.PlayerState.PLAYING;
-  }
-
-  return !elements.videoPlayer.paused;
-}
-
-function getYoutubeVideoId(url) {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, "");
-    let videoId = "";
-
-    if (host === "youtu.be") {
-      videoId = parsed.pathname.slice(1);
-    }
-
-    if (host === "youtube.com" || host === "m.youtube.com") {
-      videoId = parsed.searchParams.get("v") || "";
-    }
-
-    if (!videoId) return "";
-    return videoId;
-  } catch {
-    return "";
-  }
-}
-
-function setYoutubeHidden(hidden) {
-  const youtubeElement = document.querySelector("#youtubeHost");
-  if (youtubeElement) {
-    youtubeElement.hidden = hidden;
-  }
+function flashButton(button, text, originalText) {
+  button.textContent = text;
+  setTimeout(() => {
+    button.textContent = originalText;
+  }, 1300);
 }
 
 function createGuestName() {
   return `Guest ${Math.floor(100 + Math.random() * 900)}`;
-}
-
-function formatTime(seconds) {
-  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainder = safeSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
 }
 
 function escapeHtml(value) {

@@ -27,7 +27,7 @@ You can use the `.bat` files in the project root instead of typing commands:
 - `01-install-deps.bat` installs dependencies.
 - `02-start-dev.bat` starts the app for testing.
 - `03-check-code.bat` checks JavaScript syntax.
-- `04-build-portable-exe.bat` builds `portable\MiniBeam.exe`.
+- `04-build-portable-exe.bat` builds `release\MiniBeam.exe`.
 
 ## Testing On One Machine
 
@@ -67,4 +67,4 @@ npm run check
 npx electron-builder --win portable
 ```
 
-The portable executable appears in `dist/`.
+The portable executable appears at `release\MiniBeam.exe`.
