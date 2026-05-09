@@ -8,7 +8,6 @@ const elements = {
   homeSearchForm: document.querySelector("#homeSearchForm"),
   addressInput: document.querySelector("#addressInput"),
   homeSearchInput: document.querySelector("#homeSearchInput"),
-  roomBrowser: document.querySelector("#roomBrowser"),
   homeScreen: document.querySelector("#homeScreen"),
   browserStatus: document.querySelector("#browserStatus"),
   backButton: document.querySelector("#backButton"),
@@ -34,9 +33,9 @@ const state = {
   selfId: "",
   currentUrl: "",
   syncingNavigation: false,
-  browserReady: Boolean(elements.roomBrowser),
   zoomFactor: 1,
-  lastBroadcastUrl: ""
+  lastBroadcastUrl: "",
+  browserReady: Boolean(window.miniBeam?.browserNavigate)
 };
 
 bootstrap();
@@ -63,8 +62,8 @@ async function bootstrap() {
 
   wireSocket();
   wireUi();
-  wireBrowser();
-  updateNavigationButtons();
+  wireNativeBrowser();
+  updateNavigationButtons({ canGoBack: false, canGoForward: false });
 
   if (!state.browserReady) {
     elements.browserStatus.textContent = "Встроенный браузер доступен только в MiniBeam.exe";
@@ -116,21 +115,15 @@ function wireUi() {
   });
 
   elements.backButton.addEventListener("click", () => {
-    if (state.browserReady && elements.roomBrowser.canGoBack()) {
-      elements.roomBrowser.goBack();
-    }
+    if (state.browserReady) window.miniBeam.browserBack();
   });
 
   elements.forwardButton.addEventListener("click", () => {
-    if (state.browserReady && elements.roomBrowser.canGoForward()) {
-      elements.roomBrowser.goForward();
-    }
+    if (state.browserReady) window.miniBeam.browserForward();
   });
 
   elements.reloadButton.addEventListener("click", () => {
-    if (state.browserReady && state.currentUrl) {
-      elements.roomBrowser.reload();
-    }
+    if (state.browserReady && state.currentUrl) window.miniBeam.browserReload();
   });
 
   elements.homeButton.addEventListener("click", () => showHome());
@@ -148,52 +141,50 @@ function wireUi() {
   });
 }
 
-function wireBrowser() {
+function wireNativeBrowser() {
   if (!state.browserReady) return;
 
-  elements.roomBrowser.setAttribute("useragent", getDesktopUserAgent());
+  window.miniBeam.onBrowserEvent((event) => {
+    if (event.type === "loading") {
+      elements.browserStatus.textContent = event.loading ? "Загрузка..." : "Готово";
+      elements.loadingOverlay.hidden = true;
+      return;
+    }
 
-  elements.roomBrowser.addEventListener("did-start-loading", () => {
-    elements.browserStatus.textContent = "Загрузка...";
-    elements.loadingOverlay.hidden = false;
-    elements.errorOverlay.hidden = true;
-  });
+    if (event.type === "load-error") {
+      window.miniBeam.browserHome();
+      elements.homeScreen.hidden = false;
+      elements.errorOverlay.hidden = false;
+      elements.errorText.textContent = event.errorDescription || "Попробуйте обновить или открыть другую ссылку.";
+      elements.browserStatus.textContent = "Ошибка загрузки";
+      return;
+    }
 
-  elements.roomBrowser.addEventListener("did-stop-loading", () => {
-    elements.browserStatus.textContent = "Готово";
-    elements.loadingOverlay.hidden = true;
-    updateNavigationButtons();
-  });
+    if (event.type === "new-window") {
+      navigateBrowser(event.url, true);
+      return;
+    }
 
-  elements.roomBrowser.addEventListener("did-fail-load", (event) => {
-    if (event.errorCode === -3) return;
-    elements.loadingOverlay.hidden = true;
-    elements.errorOverlay.hidden = false;
-    elements.errorText.textContent = event.errorDescription || "Попробуйте обновить или открыть другую ссылку.";
-    elements.browserStatus.textContent = "Ошибка загрузки";
-  });
+    if (event.type === "title") {
+      const title = event.title || "New tab";
+      const tab = document.querySelector(".tab.active");
+      tab.textContent = title;
+      tab.title = title;
+      return;
+    }
 
-  elements.roomBrowser.addEventListener("dom-ready", () => {
-    elements.roomBrowser.setZoomFactor(state.zoomFactor);
-  });
+    if (event.type === "navigation-state") {
+      updateNavigationButtons(event);
+      return;
+    }
 
-  elements.roomBrowser.addEventListener("new-window", (event) => {
-    event.preventDefault();
-    navigateBrowser(event.url, true);
-  });
-
-  elements.roomBrowser.addEventListener("did-navigate", (event) => handleBrowserUrl(event.url));
-  elements.roomBrowser.addEventListener("did-navigate-in-page", (event) => handleBrowserUrl(event.url));
-
-  elements.roomBrowser.addEventListener("page-title-updated", (event) => {
-    const title = event.title || "New tab";
-    const tab = document.querySelector(".tab.active");
-    tab.textContent = title;
-    tab.title = title;
+    if (event.type === "navigated") {
+      handleBrowserUrl(event.url);
+    }
   });
 }
 
-function navigateBrowser(value, shouldBroadcast) {
+async function navigateBrowser(value, shouldBroadcast) {
   const url = normalizeUrl(value);
   if (!url) return;
 
@@ -201,6 +192,7 @@ function navigateBrowser(value, shouldBroadcast) {
   elements.addressInput.value = url;
   elements.homeScreen.hidden = true;
   elements.errorOverlay.hidden = true;
+  elements.loadingOverlay.hidden = true;
 
   if (!state.browserReady) {
     elements.browserStatus.textContent = "Откройте эту комнату в MiniBeam.exe";
@@ -208,7 +200,7 @@ function navigateBrowser(value, shouldBroadcast) {
   }
 
   state.syncingNavigation = !shouldBroadcast;
-  elements.roomBrowser.loadURL(url);
+  await window.miniBeam.browserNavigate(url);
 
   if (shouldBroadcast) {
     state.lastBroadcastUrl = url;
@@ -221,7 +213,6 @@ function handleBrowserUrl(url) {
 
   state.currentUrl = url;
   elements.addressInput.value = url;
-  updateNavigationButtons();
 
   if (state.syncingNavigation) {
     state.syncingNavigation = false;
@@ -242,20 +233,13 @@ function showHome() {
   elements.errorOverlay.hidden = true;
   elements.browserStatus.textContent = "Готово";
   if (state.browserReady) {
-    elements.roomBrowser.loadURL("about:blank");
+    window.miniBeam.browserHome();
   }
 }
 
-function updateNavigationButtons() {
-  if (!state.browserReady) {
-    elements.backButton.disabled = true;
-    elements.forwardButton.disabled = true;
-    elements.reloadButton.disabled = true;
-    return;
-  }
-
-  elements.backButton.disabled = !elements.roomBrowser.canGoBack();
-  elements.forwardButton.disabled = !elements.roomBrowser.canGoForward();
+function updateNavigationButtons(navigationState) {
+  elements.backButton.disabled = !navigationState?.canGoBack;
+  elements.forwardButton.disabled = !navigationState?.canGoForward;
   elements.reloadButton.disabled = !state.currentUrl;
 }
 
@@ -263,7 +247,7 @@ function setZoom(nextZoom) {
   state.zoomFactor = Math.min(1.4, Math.max(0.7, Number(nextZoom.toFixed(1))));
   elements.zoomLabel.textContent = `${Math.round(state.zoomFactor * 100)}%`;
   if (state.browserReady) {
-    elements.roomBrowser.setZoomFactor(state.zoomFactor);
+    window.miniBeam.browserZoom(state.zoomFactor);
   }
 }
 
@@ -312,10 +296,6 @@ function normalizeUrl(value) {
   }
 
   return `https://duckduckgo.com/?q=${encodeURIComponent(text)}`;
-}
-
-function getDesktopUserAgent() {
-  return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 }
 
 function flashButton(button, text, originalText) {
