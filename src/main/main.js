@@ -8,9 +8,9 @@ let miniBeamServer;
 let serverInfo;
 let browserVisible = false;
 let browserZoom = 1;
+let blockedRequestCount = 0;
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
-app.commandLine.appendSwitch("disable-features", "OutOfBlinkCors");
 
 async function createWindow() {
   const staticDir = path.join(__dirname, "..", "renderer");
@@ -124,7 +124,15 @@ function createNativeBrowserView() {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
   );
 
+  installAdBlocker(browserView.webContents.session);
+
   browserView.webContents.setWindowOpenHandler(({ url }) => {
+    if (shouldBlockUrl(url, "popup")) {
+      blockedRequestCount += 1;
+      sendBrowserEvent("adblock", { blocked: blockedRequestCount, url });
+      return { action: "deny" };
+    }
+
     sendBrowserEvent("new-window", { url });
     return { action: "deny" };
   });
@@ -204,3 +212,149 @@ function getNavigationState() {
     canGoForward: browserView.webContents.canGoForward()
   };
 }
+
+function installAdBlocker(targetSession) {
+  if (targetSession.__miniBeamAdBlockerInstalled) return;
+  targetSession.__miniBeamAdBlockerInstalled = true;
+
+  targetSession.webRequest.onBeforeRequest((details, callback) => {
+    const blocked = shouldBlockUrl(details.url, details.resourceType);
+
+    if (blocked) {
+      blockedRequestCount += 1;
+      sendBrowserEvent("adblock", { blocked: blockedRequestCount, url: details.url });
+    }
+
+    callback({ cancel: blocked });
+  });
+}
+
+function shouldBlockUrl(rawUrl, resourceType = "") {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) return false;
+
+  const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+  const path = `${parsed.pathname}${parsed.search}`.toLowerCase();
+  const full = `${host}${path}`;
+
+  if (AD_HOST_PARTS.some((part) => host === part || host.endsWith(`.${part}`) || host.includes(part))) {
+    return true;
+  }
+
+  if (resourceType === "mainFrame") {
+    return false;
+  }
+
+  if (AD_PATH_PARTS.some((part) => full.includes(part))) {
+    return true;
+  }
+
+  if ((resourceType === "popup" || resourceType === "subFrame") && POPUP_HOST_HINTS.some((part) => full.includes(part))) {
+    return true;
+  }
+
+  return false;
+}
+
+const AD_HOST_PARTS = [
+  "doubleclick.net",
+  "googlesyndication.com",
+  "google-analytics.com",
+  "googletagmanager.com",
+  "googletagservices.com",
+  "adservice.google",
+  "adnxs.com",
+  "adsystem.com",
+  "adsafeprotected.com",
+  "scorecardresearch.com",
+  "zedo.com",
+  "taboola.com",
+  "outbrain.com",
+  "mgid.com",
+  "adskeeper.com",
+  "criteo.com",
+  "rubiconproject.com",
+  "pubmatic.com",
+  "openx.net",
+  "smartadserver.com",
+  "yieldmo.com",
+  "adform.net",
+  "advertising.com",
+  "adroll.com",
+  "bidswitch.net",
+  "exoclick.com",
+  "popads.net",
+  "propellerads.com",
+  "trafficjunky.net",
+  "onclickads.net",
+  "realsrv.com",
+  "hilltopads.net",
+  "juicyads.com",
+  "adsterra.com",
+  "clickadu.com",
+  "popcash.net",
+  "popunder",
+  "clickunder",
+  "ad.mail.ru",
+  "top.mail.ru",
+  "an.yandex.ru",
+  "mc.yandex.ru",
+  "adfox.ru",
+  "adriver.ru",
+  "betweendigital.com",
+  "buzzoola.com",
+  "relap.io",
+  "sape.ru",
+  "otm-r.com",
+  "mytarget.ru",
+  "vk-ads",
+  "tns-counter.ru",
+  "rambler.ru/counter",
+  "livetex.ru",
+  "jivosite.com"
+];
+
+const AD_PATH_PARTS = [
+  "/ads/",
+  "/ad/",
+  "/advert",
+  "/advertising",
+  "/banner",
+  "/banners",
+  "/prebid",
+  "/bidder",
+  "/vast",
+  "/vpaid",
+  "/preroll",
+  "/popunder",
+  "/clickunder",
+  "/counter",
+  "/analytics",
+  "/tracking",
+  "/track?",
+  "utm_source=ad",
+  "ad_type=",
+  "adunit",
+  "adfox",
+  "adriver",
+  "yandex_rtb",
+  "googleads",
+  "googlesyndication"
+];
+
+const POPUP_HOST_HINTS = [
+  "ad",
+  "ads",
+  "click",
+  "offer",
+  "promo",
+  "push",
+  "traffic",
+  "under"
+];

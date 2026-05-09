@@ -18,6 +18,7 @@ const elements = {
   zoomOutButton: document.querySelector("#zoomOutButton"),
   zoomInButton: document.querySelector("#zoomInButton"),
   zoomLabel: document.querySelector("#zoomLabel"),
+  adblockStatus: document.querySelector("#adblockStatus"),
   loadingOverlay: document.querySelector("#loadingOverlay"),
   errorOverlay: document.querySelector("#errorOverlay"),
   errorText: document.querySelector("#errorText"),
@@ -157,6 +158,12 @@ function wireNativeBrowser() {
       elements.errorOverlay.hidden = false;
       elements.errorText.textContent = event.errorDescription || "Попробуйте обновить или открыть другую ссылку.";
       elements.browserStatus.textContent = "Ошибка загрузки";
+      return;
+    }
+
+    if (event.type === "adblock") {
+      elements.adblockStatus.textContent = `Блок: ${event.blocked}`;
+      elements.adblockStatus.title = event.url || "Blocked ad/tracker request";
       return;
     }
 

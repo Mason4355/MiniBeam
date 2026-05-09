@@ -468,6 +468,18 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
+.shield {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid rgba(102, 210, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(102, 210, 255, 0.08);
+  color: #bfeeff;
+  font-variant-numeric: tabular-nums;
+}
+
 .spacer {
   flex: 1;
 }
