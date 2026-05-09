@@ -28,7 +28,7 @@ const state = {
   selfId: "",
   currentUrl: "",
   syncingNavigation: false,
-  browserReady: Boolean(elements.roomBrowser?.loadURL)
+  browserReady: Boolean(elements.roomBrowser)
 };
 
 bootstrap();

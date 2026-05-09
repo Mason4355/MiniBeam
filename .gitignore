@@ -2,6 +2,7 @@ node_modules/
 dist/
 portable/
 release/
+release-fixed/
 *.log
 .DS_Store
 Thumbs.db
