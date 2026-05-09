@@ -2,6 +2,7 @@
 setlocal
 cd /d "%~dp0"
 set "PATH=%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs;%PATH%"
+set "ELECTRON_RUN_AS_NODE="
 
 echo [MiniBeam] Checking code...
 echo.

@@ -2,6 +2,7 @@
 setlocal
 cd /d "%~dp0"
 set "PATH=%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs;%PATH%"
+set "ELECTRON_RUN_AS_NODE="
 set "MINIBEAM_SERVER_URL=http://127.0.0.1:3847"
 
 echo [MiniBeam] Starting client app...
