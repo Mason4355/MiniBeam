@@ -25,8 +25,10 @@
       <main class="stage">
         <section class="browser-chrome">
           <div class="tabs">
-            <button id="tabTitle" class="tab active" type="button"><span class="tab-favicon">◉</span> New tab</button>
-            <button id="newTabButton" class="tab-plus" type="button">+</button>
+            <div id="tabsList" class="tabs-list">
+              <button id="tabTitle" class="tab active" type="button"><span class="tab-favicon">◉</span> New tab</button>
+            </div>
+            <button id="newTabButton" class="tab-plus" type="button" title="Новая вкладка">+</button>
           </div>
 
           <form id="addressForm" class="addressbar">
@@ -35,26 +37,18 @@
             <button id="reloadButton" class="circle-button" type="button" aria-label="Обновить">↻</button>
             <input id="addressInput" type="text" autocomplete="off" placeholder="Search DuckDuckGo or type a URL" />
             <span class="extension-icon" title="MiniBeam">M</span>
-            <span id="adblockText" class="extension-icon shield" title="Блокировщик рекламы">🛡</span>
+            <span id="adblockText" class="extension-icon shield" title="Блокировщик рекламы">0</span>
             <span class="extension-icon" title="Расширения">▣</span>
             <button class="menu-button" type="button" aria-label="Меню">⋮</button>
           </form>
 
           <div class="viewport">
-            <img id="browserStream" class="browser-stream" alt="Shared browser stream" draggable="false" />
-            <div id="playerLayer" class="player-layer" hidden>
-              <iframe id="youtubeFrame" class="youtube-frame" title="YouTube player" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" hidden></iframe>
-              <video id="htmlVideo" class="html-video" playsinline hidden></video>
-              <div id="iframeNotice" class="iframe-notice" hidden>
-                <strong>Встроенный просмотр</strong>
-                <span>Для этого сайта доступна синхронизация URL, чат и состояние комнаты.</span>
-              </div>
-            </div>
+            <img id="browserStream" class="browser-stream" alt="Shared Chromium browser" draggable="false" />
             <div id="homeScreen" class="home-screen">
               <div class="start-card">
                 <div class="start-row">
                   <strong>Начать просмотр</strong>
-                  <span>Область: по умолчанию</span>
+                  <span>Общий браузер</span>
                 </div>
                 <button id="startBrowserButton" class="start-browser" type="button">
                   <span>⏻</span>
@@ -68,6 +62,7 @@
                   <button type="button" data-url="https://www.youtube.com">YouTube</button>
                   <button type="button" data-url="https://duckduckgo.com">DuckDuckGo</button>
                   <button type="button" data-url="https://soundcloud.com">SoundCloud</button>
+                  <button type="button" data-url="https://neal.fun/infinite-craft/">Infinite Craft</button>
                 </div>
               </div>
             </div>
@@ -75,18 +70,14 @@
           </div>
         </section>
 
-        <footer class="stage-controls">
+        <footer class="room-footer">
           <div class="left-controls">
             <button id="reportButton" class="report-button" type="button">Сообщить о проблеме</button>
             <span id="statusText" class="toolbar-status">Готово</span>
           </div>
           <div id="participants" class="participants"></div>
           <div class="right-controls">
-            <button id="playPauseButton" class="tool-button" type="button" title="Play/Pause">▶</button>
-            <input id="seekRange" class="seek-range" type="range" min="0" max="1000" value="0" aria-label="Позиция" />
-            <button class="tool-button" type="button" title="Звук">🔊</button>
-            <input id="volumeRange" class="volume" type="range" min="0" max="100" value="70" aria-label="Громкость" />
-            <button class="tool-button" type="button" title="Во весь экран">⛶</button>
+            <button id="copyInviteButtonFooter" class="invite-footer" type="button">Пригласить</button>
           </div>
         </footer>
       </main>
@@ -96,7 +87,7 @@
           <span class="room-avatar">M</span>
           <div>
             <div id="roomLabel" class="room-label">Дом</div>
-            <div class="online-dot">1 онлайн</div>
+            <div id="onlineLabel" class="online-dot">1 онлайн</div>
           </div>
           <button id="copyInviteButton" class="invite-icon" type="button" title="Пригласить">＋</button>
         </header>

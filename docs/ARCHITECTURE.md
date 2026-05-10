@@ -1,6 +1,6 @@
 # MiniBeam Architecture
 
-MiniBeam is a local Hyperbeam-style room prototype. The host PC starts a local Node.js/Electron server, clients connect to it through Socket.IO, and the room synchronizes browser state, local video playback, participants, and chat.
+MiniBeam is a local Hyperbeam-style browser room prototype. The host PC starts a local Node.js/Electron server, clients connect through Socket.IO, and everyone sees and controls the same hosted Chromium browser.
 
 ## High-Level Scheme
 
@@ -11,9 +11,9 @@ MiniBeam is a local Hyperbeam-style room prototype. The host PC starts a local N
                                                |--> Express static client
                                                |--> Socket.IO realtime bus
                                                |--> Room state
-                                               |--> Player state
+                                               |--> Browser URL and tabs
                                                |--> Participants and chat
-                                               |--> Optional hidden Chromium frame stream
+                                               |--> Hidden Chromium frame stream
 ```
 
 ## Host Server
@@ -42,11 +42,10 @@ The host server is responsible for:
 - creating a temporary room code such as `ROOM-4821`;
 - serving the client UI over HTTP;
 - accepting Socket.IO connections;
+- running the shared Chromium browser locally on the host PC;
 - storing room state in memory;
-- storing the current browser/player URL;
-- storing playback state: `playing`, `currentTime`, `volume`, `updatedAt`;
-- storing participants and recent chat messages;
-- broadcasting room, player, browser, and chat events to all clients;
+- storing the current browser URL, title, tabs, participants, and recent chat;
+- broadcasting browser, room, participant, and chat events to all clients;
 - cleaning temporary Electron profile data when the server closes.
 
 ## Client UI
@@ -61,32 +60,36 @@ src/renderer/styles.css
 src/renderer/app.js
 ```
 
-The client UI is shaped like a hosted browser room:
+The client UI is a full browser room, not a video player:
 
 - left vertical room rail;
-- central browser/player stage;
-- Chrome-like tab and address bar;
-- bottom control strip with participants and playback controls;
+- central shared Chromium browser stage;
+- Chrome-like tabs;
+- address bar;
+- Back, Forward, Reload controls;
+- extension/menu icons;
+- bottom room strip with participants and invite button;
 - right chat and invite panel.
 
-The client connects to the local host server:
+There are no video-specific controls:
 
-```js
-const socket = io({ auth: { room: "ROOM-4821" } });
+```text
+No Play/Pause button
+No Seek range
+No Volume range
+No local video player state
+No player:* protocol
 ```
 
-## Playback Modes
+YouTube, direct `.mp4`, `.webm`, `.ogg`, and normal web pages are opened through the same hosted Chromium browser path.
 
-MiniBeam supports two playback concepts.
+## Socket.IO Events
 
-### Hosted Browser Mode
-
-For normal websites, the host runs a hidden Chromium window. The client sees a frame stream and sends mouse, wheel, and keyboard input back to the host.
-
-Events:
+Browser events:
 
 ```text
 browser:navigate
+browser:new-tab
 browser:back
 browser:forward
 browser:reload
@@ -95,82 +98,51 @@ browser:state
 browser:frame
 ```
 
-### Local Player Sync Mode
-
-For YouTube and direct HTML5 media URLs, video playback happens locally on each client. The server does not stream the video file. It only stores and broadcasts control state.
-
-Events:
+Room and chat events:
 
 ```text
-player:load
-player:play
-player:pause
-player:seek
-player:volume
-player:state
-```
-
-Player state shape:
-
-```js
-{
-  mode: "player",
-  url: "https://www.youtube.com/watch?v=...",
-  provider: "youtube",
-  playing: true,
-  currentTime: 128.4,
-  volume: 0.7,
-  updatedAt: 1778370000000,
-  controllerId: "socket-id"
-}
-```
-
-When a new participant joins, the server sends `room:state` and `player:state`. The client opens the same media URL, applies volume, seeks to the synchronized time, and starts or pauses based on server state.
-
-## Synchronization Logic
-
-The server stores `currentTime` and `updatedAt`. If playback is active, live time is calculated from the last update:
-
-```js
-const elapsed = playing ? (Date.now() - updatedAt) / 1000 : 0;
-const liveTime = currentTime + elapsed;
-```
-
-This lets late joiners and reconnecting clients land close to the current room position without the server streaming the media.
-
-## Chat
-
-Chat is delivered through Socket.IO.
-
-Events:
-
-```text
-chat:message
 room:state
+chat:message
 ```
 
-The server keeps recent messages in memory for the active room. A newly connected client receives the current message list through `room:state`, then live messages through `chat:message`.
-
-## Participants
-
-Participants are tracked by Socket.IO connection id.
-
-Each participant has:
+When a new participant joins, the server sends `room:state` with:
 
 ```js
 {
-  id: "socket-id",
-  name: "Guest 1",
-  status: "Watching"
+  roomCode: "ROOM-4821",
+  browserUrl: "https://youtube.com",
+  title: "YouTube",
+  tabs: [
+    { id: "tab-1", title: "YouTube", url: "https://youtube.com", active: true }
+  ],
+  participants: [],
+  messages: [],
+  blockedCount: 0
 }
 ```
 
-The client renders participants as avatars in the bottom control strip.
+The new participant receives the current URL, visible tabs, participant list, and chat history. No playback state is sent.
+
+## Browser Input
+
+Clients do not open websites locally in their own iframes. Instead, the host PC owns the actual Chromium instance.
+
+The client sends input events:
+
+```text
+mouseDown
+mouseUp
+mouseMove
+mouseWheel
+keyDown
+keyUp
+```
+
+The host forwards these events into the hidden Chromium `webContents` and broadcasts captured browser frames back to all clients.
 
 ## Current MVP Limits
 
-- YouTube control uses iframe postMessage commands and is best-effort.
-- Direct HTML5 sync works best for `.mp4`, `.webm`, and `.ogg` URLs.
-- Browser frame streaming is JPEG-over-Socket.IO for prototyping, not WebRTC yet.
-- Audio capture from the hosted Chromium browser is not implemented yet.
-- Permission roles are prepared conceptually, but strict host/trusted/viewer enforcement is not complete.
+- Tabs are represented in room state, but the host currently runs one active Chromium webContents.
+- Frame streaming is JPEG-over-Socket.IO for prototyping, not WebRTC yet.
+- Hosted Chromium audio capture is not implemented yet.
+- Permission roles are not strict yet; all connected clients can control the shared browser.
