@@ -13,9 +13,11 @@ const ui = {
   pageOverlay: document.querySelector("#pageOverlay"),
   homeForm: document.querySelector("#homeForm"),
   homeInput: document.querySelector("#homeInput"),
+  startBrowserButton: document.querySelector("#startBrowserButton"),
   newTabButton: document.querySelector("#newTabButton"),
   statusText: document.querySelector("#statusText"),
   adblockText: document.querySelector("#adblockText"),
+  copyInviteButtonPanel: document.querySelector("#copyInviteButtonPanel"),
   participants: document.querySelector("#participants"),
   messages: document.querySelector("#messages"),
   chatForm: document.querySelector("#chatForm"),
@@ -53,7 +55,7 @@ function bindSocket() {
     ui.inviteUrl.textContent = state.inviteUrl;
     if (room.browserUrl) setUrl(room.browserUrl);
     if (room.title) setTitle(room.title);
-    if (Number.isFinite(room.blockedCount)) ui.adblockText.textContent = `Блок: ${room.blockedCount}`;
+    if (Number.isFinite(room.blockedCount)) ui.adblockText.textContent = room.blockedCount ? String(room.blockedCount) : "🛡";
     renderParticipants(room.participants || []);
     renderMessages(room.messages || []);
   });
@@ -69,7 +71,7 @@ function bindSocket() {
     ui.statusText.textContent = browser.loading ? "Загрузка..." : "Готово";
     ui.backButton.disabled = !browser.canGoBack;
     ui.forwardButton.disabled = !browser.canGoForward;
-    if (Number.isFinite(browser.blockedCount)) ui.adblockText.textContent = `Блок: ${browser.blockedCount}`;
+    if (Number.isFinite(browser.blockedCount)) ui.adblockText.textContent = browser.blockedCount ? String(browser.blockedCount) : "🛡";
     if (browser.error) showOverlay(`Страница не открылась: ${browser.error}`);
   });
 
@@ -78,8 +80,10 @@ function bindSocket() {
 
 function bindUi() {
   ui.copyInviteButton.addEventListener("click", async () => {
-    await window.miniBeam.copy(`${state.roomCode} ${state.inviteUrl}`);
-    flash(ui.copyInviteButton, "Скопировано", "Копировать приглашение");
+    await copyInvite(ui.copyInviteButton, "＋");
+  });
+  ui.copyInviteButtonPanel.addEventListener("click", async () => {
+    await copyInvite(ui.copyInviteButtonPanel, "Пригласить друзей");
   });
 
   ui.addressForm.addEventListener("submit", (event) => {
@@ -100,6 +104,7 @@ function bindUi() {
   ui.forwardButton.addEventListener("click", () => state.socket.emit("browser:forward"));
   ui.reloadButton.addEventListener("click", () => state.socket.emit("browser:reload"));
   ui.newTabButton.addEventListener("click", showHome);
+  ui.startBrowserButton.addEventListener("click", () => navigate("https://duckduckgo.com"));
 
   ui.stream.addEventListener("mousedown", (event) => sendMouse(event, "mouseDown"));
   ui.stream.addEventListener("mouseup", (event) => sendMouse(event, "mouseUp"));
@@ -134,6 +139,11 @@ function bindUi() {
     state.socket.emit("chat:message", text);
     ui.chatInput.value = "";
   });
+}
+
+async function copyInvite(button, originalText) {
+  await window.miniBeam.copy(`${state.roomCode} ${state.inviteUrl}`);
+  flash(button, "Скопировано", originalText);
 }
 
 function navigate(value) {

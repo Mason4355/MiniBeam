@@ -8,74 +8,108 @@
   </head>
   <body>
     <div class="app">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">M</span>
-          <div>
-            <div class="brand-name">MiniBeam</div>
-            <div id="roomLabel" class="room-label">Комната</div>
+      <aside class="nav-rail" aria-label="Навигация">
+        <div class="nav-top">
+          <button class="nav-logo" type="button" title="MiniBeam">M</button>
+          <button class="nav-icon" type="button" title="Участники">👥</button>
+          <button class="nav-avatar active" type="button" title="Дом">M</button>
+        </div>
+        <div class="nav-bottom">
+          <button class="nav-icon" type="button" title="Избранное">★</button>
+          <button class="nav-icon" type="button" title="Загрузки">↓</button>
+          <button class="nav-icon" type="button" title="Помощь">?</button>
+          <button class="nav-avatar small" type="button" title="Профиль">В</button>
+        </div>
+      </aside>
+
+      <main class="stage">
+        <section class="browser-chrome">
+          <div class="tabs">
+            <button id="tabTitle" class="tab active" type="button"><span class="tab-favicon">◉</span> New tab</button>
+            <button id="newTabButton" class="tab-plus" type="button">+</button>
           </div>
-        </div>
-        <div class="invite">
-          <span id="inviteUrl">Запуск сервера...</span>
-          <button id="copyInviteButton" type="button">Копировать приглашение</button>
-        </div>
-      </header>
 
-      <main class="layout">
-        <aside class="participants-rail">
-          <div id="participants" class="participants"></div>
-        </aside>
+          <form id="addressForm" class="addressbar">
+            <button id="backButton" class="circle-button" type="button" aria-label="Назад">‹</button>
+            <button id="forwardButton" class="circle-button" type="button" aria-label="Вперёд">›</button>
+            <button id="reloadButton" class="circle-button" type="button" aria-label="Обновить">↻</button>
+            <input id="addressInput" type="text" autocomplete="off" placeholder="Search DuckDuckGo or type a URL" />
+            <span class="extension-icon" title="MiniBeam">M</span>
+            <span id="adblockText" class="extension-icon shield" title="Блокировщик рекламы">🛡</span>
+            <span class="extension-icon" title="Расширения">▣</span>
+            <button class="menu-button" type="submit" aria-label="Открыть">⋮</button>
+          </form>
 
-        <section class="room">
-          <div class="browser-chrome">
-            <div class="tabs">
-              <button id="tabTitle" class="tab active" type="button">New tab</button>
-              <button id="newTabButton" class="tab-plus" type="button">+</button>
-            </div>
-
-            <form id="addressForm" class="addressbar">
-              <button id="backButton" class="circle-button" type="button" aria-label="Назад">‹</button>
-              <button id="forwardButton" class="circle-button" type="button" aria-label="Вперёд">›</button>
-              <button id="reloadButton" class="circle-button" type="button" aria-label="Обновить">↻</button>
-              <input id="addressInput" type="text" autocomplete="off" placeholder="Введите адрес или поисковый запрос" />
-              <span id="statusText" class="toolbar-status">Готово</span>
-              <span id="adblockText" class="shield">Блок: 0</span>
-              <button class="go-button" type="submit">Go</button>
-            </form>
-
-            <div class="viewport">
-              <img id="browserStream" class="browser-stream" alt="Shared browser stream" draggable="false" />
-              <div id="homeScreen" class="home-screen">
-                <div class="home-logo">
-                  <span class="home-mark">M</span>
-                  <strong>MINIBEAM</strong>
+          <div class="viewport">
+            <img id="browserStream" class="browser-stream" alt="Shared browser stream" draggable="false" />
+            <div id="homeScreen" class="home-screen">
+              <div class="start-card">
+                <div class="start-row">
+                  <strong>Начать просмотр</strong>
+                  <span>Область: по умолчанию</span>
                 </div>
+                <button id="startBrowserButton" class="start-browser" type="button">
+                  <span>⏻</span>
+                  Открыть новый браузер
+                </button>
                 <form id="homeForm" class="home-search">
-                  <input id="homeInput" type="text" autocomplete="off" placeholder="Search DuckDuckGo or type a URL" />
+                  <input id="homeInput" type="text" autocomplete="off" placeholder="Введите адрес или поисковый запрос" />
                 </form>
-                <div class="shortcuts">
+                <div class="saved-title">Быстрый запуск</div>
+                <div class="saved-list">
                   <button type="button" data-url="https://www.youtube.com">YouTube</button>
-                  <button type="button" data-url="https://hd.kinopoisk.ru">Кинопоиск</button>
-                  <button type="button" data-url="https://soundcloud.com">SoundCloud</button>
                   <button type="button" data-url="https://duckduckgo.com">DuckDuckGo</button>
-                  <button type="button" data-url="https://neal.fun/infinite-craft/">Infinite Craft</button>
+                  <button type="button" data-url="https://soundcloud.com">SoundCloud</button>
                 </div>
               </div>
-              <div id="pageOverlay" class="page-overlay" hidden></div>
             </div>
+            <div id="pageOverlay" class="page-overlay" hidden></div>
           </div>
         </section>
 
-        <aside class="chat-panel">
-          <header>Чат</header>
-          <div id="messages" class="messages"></div>
-          <form id="chatForm" class="chat-form">
-            <input id="chatInput" type="text" maxlength="600" placeholder="Сообщение" />
-            <button type="submit">Отправить</button>
-          </form>
-        </aside>
+        <footer class="stage-controls">
+          <div class="left-controls">
+            <button id="reportButton" class="report-button" type="button">Сообщить о проблеме</button>
+            <span id="statusText" class="toolbar-status">Готово</span>
+          </div>
+          <div id="participants" class="participants"></div>
+          <div class="right-controls">
+            <button class="tool-button" type="button" title="Звук">🔊</button>
+            <input class="volume" type="range" min="0" max="100" value="70" aria-label="Громкость" />
+            <button class="tool-button" type="button" title="Во весь экран">⛶</button>
+          </div>
+        </footer>
       </main>
+
+      <aside class="chat-panel">
+        <header class="room-head">
+          <span class="room-avatar">M</span>
+          <div>
+            <div id="roomLabel" class="room-label">Дом</div>
+            <div class="online-dot">1 онлайн</div>
+          </div>
+          <button id="copyInviteButton" class="invite-icon" type="button" title="Пригласить">＋</button>
+        </header>
+
+        <nav class="chat-tabs">
+          <button class="active" type="button">▰</button>
+          <button type="button">☎</button>
+          <button type="button">≡</button>
+        </nav>
+
+        <section class="invite-empty">
+          <h2>Пригласите своих друзей</h2>
+          <p>Пригласите других, чтобы вы могли смотреть и общаться вместе.</p>
+          <button id="copyInviteButtonPanel" type="button">Пригласить друзей</button>
+          <span id="inviteUrl">Запуск сервера...</span>
+        </section>
+
+        <div id="messages" class="messages"></div>
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" type="text" maxlength="600" placeholder="Type a message" />
+          <button type="submit">GIF</button>
+        </form>
+      </aside>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
