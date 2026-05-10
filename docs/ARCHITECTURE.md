@@ -1,13 +1,13 @@
 # MiniBeam Architecture
 
-MiniBeam is a local Hyperbeam-style browser room prototype. A local Node.js server keeps shared room state, and every Electron client renders the current web page in its own Chromium `webview`.
+MiniBeam is a local Hyperbeam-style browser room prototype. A local Node.js server keeps shared room state, and every Electron client renders the current web page in an embedded Chromium `BrowserView`.
 
 ## High-Level Scheme
 
 ```text
-[Electron Client 1: Chromium webview] ---\
-[Electron Client 2: Chromium webview] ----> [Local Node.js Server]
-[Electron Client 3: Chromium webview] ---/             |
+[Electron Client 1: Chromium BrowserView] ---\
+[Electron Client 2: Chromium BrowserView] ----> [Local Node.js Server]
+[Electron Client 3: Chromium BrowserView] ---/             |
                                                        |--> Express static files
                                                        |--> Socket.IO realtime bus
                                                        |--> Room state
@@ -22,7 +22,7 @@ MiniBeam is a local Hyperbeam-style browser room prototype. A local Node.js serv
 server.js      Node.js + Express + Socket.IO local server
 main.js        Electron main process
 preload.js     Safe bridge for server URL and clipboard
-renderer.js    Browser UI, webview control, Socket.IO sync, chat
+renderer.js    Browser UI controls, Socket.IO sync, chat
 index.html     Client layout
 styles.css     Dark Hyperbeam-like UI
 launcher.js    Starts server and one Electron client for npm start
@@ -60,7 +60,7 @@ or by `03-start-client.bat`.
 
 The client contains:
 
-- real Chromium `webview`;
+- real Chromium `BrowserView`;
 - address bar;
 - Back / Forward / Reload;
 - synchronized tabs;
@@ -117,7 +117,7 @@ chat:message
 2. Client emits room:join.
 3. Server adds participant to the room.
 4. Server sends room:state.
-5. Client renders tabs, participants, chat history, and opens the current URL in webview.
+5. Client renders tabs, participants, chat history, and opens the current URL in BrowserView.
 ```
 
 `room:state` contains URL, tabs, navigation metadata, participants, and chat. It does not contain playback state.

@@ -8,7 +8,6 @@ const ui = {
   backButton: document.querySelector("#backButton"),
   forwardButton: document.querySelector("#forwardButton"),
   reloadButton: document.querySelector("#reloadButton"),
-  browserView: document.querySelector("#browserView"),
   statusText: document.querySelector("#statusText"),
   roomLabel: document.querySelector("#roomLabel"),
   onlineLabel: document.querySelector("#onlineLabel"),
@@ -51,7 +50,7 @@ function boot() {
   state.socket = io(serverUrl, { transports: ["websocket", "polling"] });
   bindSocket();
   bindUi();
-  bindWebview();
+  bindBrowserView();
 }
 
 function bindSocket() {
@@ -80,13 +79,7 @@ function bindSocket() {
   state.socket.on("browser:state", applyBrowserState);
   state.socket.on("browser:reload", (payload) => {
     if (payload.sourceId === state.selfId) return;
-    ui.browserView.reload();
-  });
-  state.socket.on("browser:click", () => {
-    ui.statusText.textContent = "Активность в браузере";
-  });
-  state.socket.on("browser:input", () => {
-    ui.statusText.textContent = "Ввод в браузере";
+    window.miniBeam.browser.reload();
   });
   state.socket.on("chat:message", appendMessage);
 }
@@ -100,18 +93,18 @@ function bindUi() {
     state.socket.emit("browser:navigate", { url });
   });
 
-  ui.backButton.addEventListener("click", () => {
-    if (ui.browserView.canGoBack()) ui.browserView.goBack();
+  ui.backButton.addEventListener("click", async () => {
+    await window.miniBeam.browser.back();
     state.socket.emit("browser:back");
   });
 
-  ui.forwardButton.addEventListener("click", () => {
-    if (ui.browserView.canGoForward()) ui.browserView.goForward();
+  ui.forwardButton.addEventListener("click", async () => {
+    await window.miniBeam.browser.forward();
     state.socket.emit("browser:forward");
   });
 
-  ui.reloadButton.addEventListener("click", () => {
-    ui.browserView.reload();
+  ui.reloadButton.addEventListener("click", async () => {
+    await window.miniBeam.browser.reload();
     state.socket.emit("browser:reload");
   });
 
@@ -131,40 +124,47 @@ function bindUi() {
     ui.chatInput.value = "";
   });
 
-  ui.browserView.addEventListener("mousedown", () => state.socket.emit("browser:click", { tabId: state.activeTabId }));
   window.addEventListener("keydown", (event) => {
     if (isTypingInUi()) return;
     state.socket.emit("browser:input", { tabId: state.activeTabId, key: event.key });
   });
 }
 
-function bindWebview() {
-  ui.browserView.addEventListener("did-start-loading", () => {
-    ui.statusText.textContent = "Загрузка...";
-  });
+function bindBrowserView() {
+  window.miniBeam.browser.onEvent((event) => {
+    if (event.type === "loading") {
+      ui.statusText.textContent = event.loading ? "Загрузка..." : "Готово";
+    }
 
-  ui.browserView.addEventListener("did-stop-loading", () => {
-    ui.statusText.textContent = "Готово";
-    updateNavigationButtons();
-  });
+    if (event.type === "navigation-state") {
+      ui.backButton.disabled = !event.canGoBack;
+      ui.forwardButton.disabled = !event.canGoForward;
+    }
 
-  ui.browserView.addEventListener("did-navigate", reportWebviewUrl);
-  ui.browserView.addEventListener("did-navigate-in-page", reportWebviewUrl);
-  ui.browserView.addEventListener("page-title-updated", (event) => {
-    updateActiveTabTitle(event.title);
-    state.socket.emit("browser:updateURL", {
-      tabId: state.activeTabId,
-      url: ui.browserView.getURL(),
-      title: event.title
-    });
-  });
-  ui.browserView.addEventListener("new-window", (event) => {
-    const url = event.url;
-    state.socket.emit("browser:tab:new");
-    setTimeout(() => {
-      navigateLocal(url);
-      state.socket.emit("browser:navigate", { url });
-    }, 150);
+    if (event.type === "navigated") {
+      reportBrowserUrl(event.url, event.title);
+    }
+
+    if (event.type === "title") {
+      updateActiveTabTitle(event.title);
+      state.socket.emit("browser:updateURL", {
+        tabId: state.activeTabId,
+        url: event.url,
+        title: event.title
+      });
+    }
+
+    if (event.type === "new-window") {
+      state.socket.emit("browser:tab:new");
+      setTimeout(() => {
+        navigateLocal(event.url);
+        state.socket.emit("browser:navigate", { url: event.url });
+      }, 150);
+    }
+
+    if (event.type === "error") {
+      ui.statusText.textContent = event.errorDescription || "Страница не открылась";
+    }
   });
 }
 
@@ -172,9 +172,9 @@ function applyBrowserState(nextState) {
   state.activeTabId = nextState.activeTabId || state.activeTabId;
   state.tabs = nextState.tabs || state.tabs;
   renderTabs();
-  updateNavigationButtons();
+  updateNavigationButtonsFromTabs();
 
-  if (nextState.url && nextState.sourceId !== state.selfId && ui.browserView.getURL() !== nextState.url) {
+  if (nextState.url && ui.addressInput.value !== nextState.url) {
     navigateLocal(nextState.url, true);
   }
 
@@ -184,22 +184,20 @@ function applyBrowserState(nextState) {
 function navigateLocal(url, remote = false) {
   state.applyingRemote = remote;
   ui.addressInput.value = url;
-  ui.browserView.src = url;
+  window.miniBeam.browser.navigate(url);
   setTimeout(() => {
     state.applyingRemote = false;
-  }, 400);
+  }, 500);
 }
 
-function reportWebviewUrl(event) {
-  const url = event.url || ui.browserView.getURL();
+function reportBrowserUrl(url, title = "") {
   ui.addressInput.value = url;
   updateActiveTabUrl(url);
-  updateNavigationButtons();
   if (state.applyingRemote) return;
   state.socket.emit("browser:updateURL", {
     tabId: state.activeTabId,
     url,
-    title: ui.browserView.getTitle?.() || getTitleFromUrl(url)
+    title: title || getTitleFromUrl(url)
   });
 }
 
@@ -252,10 +250,11 @@ function appendMessage(message) {
   ui.messages.scrollTop = ui.messages.scrollHeight;
 }
 
-function updateNavigationButtons() {
+function updateNavigationButtonsFromTabs() {
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
-  ui.backButton.disabled = activeTab ? !activeTab.canGoBack : !ui.browserView.canGoBack();
-  ui.forwardButton.disabled = activeTab ? !activeTab.canGoForward : !ui.browserView.canGoForward();
+  if (!activeTab) return;
+  ui.backButton.disabled = !activeTab.canGoBack;
+  ui.forwardButton.disabled = !activeTab.canGoForward;
 }
 
 function updateActiveTabUrl(url) {
@@ -269,7 +268,7 @@ function updateActiveTabTitle(title) {
   renderTabs();
 }
 
-async function copyInvite(button, originalText) {
+function copyInvite(button, originalText) {
   window.miniBeam.copy(`${state.roomCode} ${state.inviteUrl}`);
   flash(button, "Скопировано", originalText);
 }
