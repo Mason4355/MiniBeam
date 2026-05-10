@@ -9,6 +9,7 @@ const ui = {
   forwardButton: document.querySelector("#forwardButton"),
   reloadButton: document.querySelector("#reloadButton"),
   statusText: document.querySelector("#statusText"),
+  adblockStatus: document.querySelector("#adblockStatus"),
   roomLabel: document.querySelector("#roomLabel"),
   onlineLabel: document.querySelector("#onlineLabel"),
   participants: document.querySelector("#participants"),
@@ -164,6 +165,10 @@ function bindBrowserView() {
 
     if (event.type === "error") {
       ui.statusText.textContent = event.errorDescription || "Страница не открылась";
+    }
+
+    if (event.type === "adblock") {
+      ui.adblockStatus.textContent = `AdBlock: ${event.blockedCount || 0}`;
     }
   });
 }

@@ -5,10 +5,12 @@ const { app, BrowserView, BrowserWindow, Menu, ipcMain, session } = require("ele
 
 const runtimeDir = path.join(os.tmpdir(), `MiniBeamClient-${process.pid}`);
 const serverUrl = process.env.MINIBEAM_SERVER_URL || "http://127.0.0.1:3847";
+const browserPartition = `persist:minibeam-browser-${process.pid}`;
 
 let mainWindow;
 let browserView;
 let isQuitting = false;
+let blockedCount = 0;
 
 fs.mkdirSync(runtimeDir, { recursive: true });
 app.setPath("userData", runtimeDir);
@@ -52,9 +54,12 @@ async function createWindow() {
 }
 
 function createBrowserView() {
+  const browserSession = session.fromPartition(browserPartition);
+  installAdBlocker(browserSession);
+
   browserView = new BrowserView({
     webPreferences: {
-      partition: `minibeam-browser-${process.pid}`,
+      partition: browserPartition,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -70,6 +75,11 @@ function createBrowserView() {
   );
 
   browserView.webContents.setWindowOpenHandler(({ url }) => {
+    if (shouldBlockUrl(url, "popup")) {
+      blockedCount += 1;
+      sendBrowserEvent("adblock", { blockedCount, url });
+      return { action: "deny" };
+    }
     sendBrowserEvent("new-window", { url });
     return { action: "deny" };
   });
@@ -130,7 +140,8 @@ ipcMain.handle("browser:state", () => ({
   url: browserView?.webContents.getURL() || "",
   title: browserView?.webContents.getTitle() || "New tab",
   canGoBack: browserView?.webContents.canGoBack() || false,
-  canGoForward: browserView?.webContents.canGoForward() || false
+  canGoForward: browserView?.webContents.canGoForward() || false,
+  blockedCount
 }));
 
 function reportNavigation(url) {
@@ -162,8 +173,112 @@ async function cleanup() {
   try {
     await session.defaultSession.clearCache();
     await session.defaultSession.clearStorageData();
+    await session.fromPartition(browserPartition).clearCache();
+    await session.fromPartition(browserPartition).clearStorageData();
   } catch {}
   try {
     fs.rmSync(runtimeDir, { recursive: true, force: true });
   } catch {}
 }
+
+function installAdBlocker(targetSession) {
+  targetSession.webRequest.onBeforeRequest((details, callback) => {
+    const blocked = shouldBlockUrl(details.url, details.resourceType);
+    if (blocked) {
+      blockedCount += 1;
+      sendBrowserEvent("adblock", { blockedCount, url: details.url, resourceType: details.resourceType });
+    }
+    callback({ cancel: blocked });
+  });
+}
+
+function shouldBlockUrl(rawUrl, resourceType = "") {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) return false;
+  if (resourceType === "mainFrame") return false;
+
+  const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+  const target = `${host}${parsed.pathname}${parsed.search}`.toLowerCase();
+
+  return AD_HOSTS.some((item) => host === item || host.endsWith(`.${item}`) || host.includes(item)) ||
+    AD_PATTERNS.some((item) => target.includes(item));
+}
+
+const AD_HOSTS = [
+  "doubleclick.net",
+  "googlesyndication.com",
+  "googleadservices.com",
+  "googletagservices.com",
+  "googletagmanager.com",
+  "google-analytics.com",
+  "adservice.google",
+  "pagead2.googlesyndication.com",
+  "securepubads.g.doubleclick.net",
+  "adnxs.com",
+  "adsafeprotected.com",
+  "scorecardresearch.com",
+  "taboola.com",
+  "outbrain.com",
+  "mgid.com",
+  "criteo.com",
+  "rubiconproject.com",
+  "pubmatic.com",
+  "openx.net",
+  "smartadserver.com",
+  "adform.net",
+  "bidswitch.net",
+  "exoclick.com",
+  "popads.net",
+  "propellerads.com",
+  "onclickads.net",
+  "realsrv.com",
+  "hilltopads.net",
+  "adsterra.com",
+  "clickadu.com",
+  "popcash.net",
+  "ad.mail.ru",
+  "top.mail.ru",
+  "an.yandex.ru",
+  "mc.yandex.ru",
+  "yabs.yandex.ru",
+  "adfox.ru",
+  "ads.adfox.ru",
+  "adriver.ru",
+  "mytarget.ru",
+  "betweendigital.com",
+  "buzzoola.com",
+  "relap.io"
+];
+
+const AD_PATTERNS = [
+  "/ads/",
+  "/ad/",
+  "/advert",
+  "/advertisement",
+  "/banner",
+  "/banners",
+  "/prebid",
+  "/vast",
+  "/vpaid",
+  "/preroll",
+  "/popunder",
+  "/clickunder",
+  "/counter",
+  "/analytics",
+  "/tracking",
+  "/track?",
+  "/pixel",
+  "adfox",
+  "adriver",
+  "yandex_rtb",
+  "googleads",
+  "googlesyndication",
+  "doubleclick",
+  "adservice"
+];
