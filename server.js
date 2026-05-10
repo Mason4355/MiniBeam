@@ -169,8 +169,10 @@ function closeTab(socket, tabId) {
   if (wasActive) {
     const next = room.tabs[Math.max(0, index - 1)];
     room.activeTabId = next.id;
-    next.active = true;
   }
+  room.tabs.forEach((tab) => {
+    tab.active = tab.id === room.activeTabId;
+  });
   emitBrowserState(socket.id, "tab:close");
 }
 

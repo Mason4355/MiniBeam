@@ -91,9 +91,11 @@ button {
   flex: 0 1 260px;
   padding: 0 12px;
   overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tab.active {
@@ -104,9 +106,30 @@ button {
   width: 9px;
   height: 9px;
   display: inline-block;
-  margin-right: 8px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #cfc9de;
+  font-size: 15px;
+}
+
+.tab-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
 .tab-plus {

@@ -1,7 +1,7 @@
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
-const { app, BrowserView, BrowserWindow, ipcMain, session } = require("electron");
+const { app, BrowserView, BrowserWindow, Menu, ipcMain, session } = require("electron");
 
 const runtimeDir = path.join(os.tmpdir(), `MiniBeamClient-${process.pid}`);
 const serverUrl = process.env.MINIBEAM_SERVER_URL || "http://127.0.0.1:3847";
@@ -27,6 +27,8 @@ app.on("before-quit", async (event) => {
 });
 
 async function createWindow() {
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 720,

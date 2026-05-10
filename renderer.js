@@ -169,12 +169,14 @@ function bindBrowserView() {
 }
 
 function applyBrowserState(nextState) {
+  const previousActiveTabId = state.activeTabId;
   state.activeTabId = nextState.activeTabId || state.activeTabId;
   state.tabs = nextState.tabs || state.tabs;
   renderTabs();
   updateNavigationButtonsFromTabs();
 
-  if (nextState.url && ui.addressInput.value !== nextState.url) {
+  const activeChanged = previousActiveTabId && previousActiveTabId !== state.activeTabId;
+  if (nextState.url && (activeChanged || ui.addressInput.value !== nextState.url)) {
     navigateLocal(nextState.url, true);
   }
 
@@ -208,9 +210,17 @@ function renderTabs() {
     button.className = `tab ${tab.active ? "active" : ""}`;
     button.type = "button";
     button.title = tab.url || tab.title || "New tab";
-    button.innerHTML = `<span class="tab-dot"></span>${escapeHtml(tab.title || "New tab")}`;
+    button.innerHTML = `
+      <span class="tab-dot"></span>
+      <span class="tab-title">${escapeHtml(tab.title || "New tab")}</span>
+      <span class="tab-close" title="Закрыть">×</span>
+    `;
     button.addEventListener("click", () => {
       state.socket.emit("browser:tab:switch", { tabId: tab.id });
+    });
+    button.querySelector(".tab-close").addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.socket.emit("browser:tab:close", { tabId: tab.id });
     });
     ui.tabs.append(button);
   });
