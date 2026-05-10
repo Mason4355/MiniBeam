@@ -37,11 +37,19 @@
             <span class="extension-icon" title="MiniBeam">M</span>
             <span id="adblockText" class="extension-icon shield" title="Блокировщик рекламы">🛡</span>
             <span class="extension-icon" title="Расширения">▣</span>
-            <button class="menu-button" type="submit" aria-label="Открыть">⋮</button>
+            <button class="menu-button" type="button" aria-label="Меню">⋮</button>
           </form>
 
           <div class="viewport">
             <img id="browserStream" class="browser-stream" alt="Shared browser stream" draggable="false" />
+            <div id="playerLayer" class="player-layer" hidden>
+              <iframe id="youtubeFrame" class="youtube-frame" title="YouTube player" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" hidden></iframe>
+              <video id="htmlVideo" class="html-video" playsinline hidden></video>
+              <div id="iframeNotice" class="iframe-notice" hidden>
+                <strong>Встроенный просмотр</strong>
+                <span>Для этого сайта доступна синхронизация URL, чат и состояние комнаты.</span>
+              </div>
+            </div>
             <div id="homeScreen" class="home-screen">
               <div class="start-card">
                 <div class="start-row">
@@ -74,8 +82,10 @@
           </div>
           <div id="participants" class="participants"></div>
           <div class="right-controls">
+            <button id="playPauseButton" class="tool-button" type="button" title="Play/Pause">▶</button>
+            <input id="seekRange" class="seek-range" type="range" min="0" max="1000" value="0" aria-label="Позиция" />
             <button class="tool-button" type="button" title="Звук">🔊</button>
-            <input class="volume" type="range" min="0" max="100" value="70" aria-label="Громкость" />
+            <input id="volumeRange" class="volume" type="range" min="0" max="100" value="70" aria-label="Громкость" />
             <button class="tool-button" type="button" title="Во весь экран">⛶</button>
           </div>
         </footer>

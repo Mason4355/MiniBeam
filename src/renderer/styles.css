@@ -265,6 +265,40 @@ input {
   user-select: none;
 }
 
+.player-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: #000;
+}
+
+.youtube-frame,
+.html-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  background: #000;
+}
+
+.iframe-notice {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+  background: #000;
+}
+
+.iframe-notice strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
 .home-screen {
   position: absolute;
   inset: 0;
@@ -427,6 +461,11 @@ input {
 
 .volume {
   width: 92px;
+  accent-color: var(--accent);
+}
+
+.seek-range {
+  width: min(220px, 18vw);
   accent-color: var(--accent);
 }
 

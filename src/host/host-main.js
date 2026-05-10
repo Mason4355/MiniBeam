@@ -24,6 +24,16 @@ let frameTimer;
 let guestCounter = 1;
 const participants = new Map();
 const messages = [];
+const playerState = {
+  mode: "browser",
+  url: "",
+  provider: "browser",
+  playing: false,
+  currentTime: 0,
+  volume: 0.7,
+  updatedAt: Date.now(),
+  controllerId: ""
+};
 
 fs.mkdirSync(runtimeDir, { recursive: true });
 app.setPath("userData", runtimeDir);
@@ -123,6 +133,7 @@ async function startServer() {
     emitRoomState(socket.id);
     if (lastFrame) socket.emit("browser:frame", lastFrame);
     emitState();
+    socket.emit("player:state", getLivePlayerState());
 
     socket.on("browser:navigate", navigate);
     socket.on("browser:back", () => {
@@ -133,6 +144,11 @@ async function startServer() {
     });
     socket.on("browser:reload", () => browserWindow.webContents.reload());
     socket.on("browser:input", (event) => sendInput(event));
+    socket.on("player:load", (payload) => handlePlayerLoad(socket, payload));
+    socket.on("player:play", (payload) => handlePlayerPlayback(socket, "play", payload));
+    socket.on("player:pause", (payload) => handlePlayerPlayback(socket, "pause", payload));
+    socket.on("player:seek", (payload) => handlePlayerSeek(socket, payload));
+    socket.on("player:volume", (payload) => handlePlayerVolume(socket, payload));
     socket.on("chat:message", (text) => {
       const message = {
         id: `${Date.now()}-${socket.id}`,
@@ -160,6 +176,7 @@ function emitRoomState(selfId = "") {
     browserUrl: currentUrl,
     title: currentTitle,
     blockedCount,
+    player: getLivePlayerState(),
     participants: Array.from(participants.values()),
     messages,
     selfId
@@ -169,9 +186,79 @@ function emitRoomState(selfId = "") {
 async function navigate(rawUrl) {
   const url = normalizeUrl(rawUrl);
   if (!url) return;
+  playerState.mode = "browser";
+  playerState.provider = "browser";
+  playerState.url = "";
+  playerState.playing = false;
+  emitPlayerState();
   currentUrl = url;
   emitState({ loading: true });
   await browserWindow.webContents.loadURL(url);
+}
+
+function handlePlayerLoad(socket, payload = {}) {
+  const url = normalizeUrl(payload.url);
+  if (!url) return;
+  playerState.mode = "player";
+  playerState.url = url;
+  playerState.provider = payload.provider || detectProvider(url);
+  playerState.playing = false;
+  playerState.currentTime = 0;
+  playerState.volume = clamp(Number(payload.volume), 0, 1, playerState.volume);
+  playerState.updatedAt = Date.now();
+  playerState.controllerId = socket.id;
+  currentUrl = url;
+  currentTitle = playerState.provider === "youtube" ? "YouTube" : "HTML5 Video";
+  emitPlayerState();
+  emitState({ url, title: currentTitle, loading: false });
+}
+
+function handlePlayerPlayback(socket, action, payload = {}) {
+  if (playerState.mode !== "player") return;
+  playerState.currentTime = clamp(Number(payload.currentTime), 0, Number.MAX_SAFE_INTEGER, getLivePlayerState().currentTime);
+  playerState.playing = action === "play";
+  playerState.updatedAt = Date.now();
+  playerState.controllerId = socket.id;
+  emitPlayerState();
+}
+
+function handlePlayerSeek(socket, payload = {}) {
+  if (playerState.mode !== "player") return;
+  playerState.currentTime = clamp(Number(payload.currentTime), 0, Number.MAX_SAFE_INTEGER, 0);
+  playerState.updatedAt = Date.now();
+  playerState.controllerId = socket.id;
+  emitPlayerState();
+}
+
+function handlePlayerVolume(socket, payload = {}) {
+  playerState.volume = clamp(Number(payload.volume), 0, 1, playerState.volume);
+  playerState.controllerId = socket.id;
+  emitPlayerState();
+}
+
+function emitPlayerState() {
+  if (!io) return;
+  io.emit("player:state", getLivePlayerState());
+}
+
+function getLivePlayerState() {
+  const elapsed = playerState.playing ? (Date.now() - playerState.updatedAt) / 1000 : 0;
+  return {
+    ...playerState,
+    currentTime: playerState.currentTime + elapsed,
+    serverTime: Date.now()
+  };
+}
+
+function detectProvider(url) {
+  if (/youtu\.be|youtube\.com/i.test(url)) return "youtube";
+  if (/\.(mp4|webm|ogg|m3u8)(\?|#|$)/i.test(url)) return "html5";
+  return "iframe";
+}
+
+function clamp(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
 }
 
 function sendInput(event) {
