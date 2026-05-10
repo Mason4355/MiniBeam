@@ -3,13 +3,13 @@
   "version": "0.2.0",
   "description": "Portable shared Chromium room with chat, room invites, and built-in ad blocking.",
   "author": "Mason4355",
-  "main": "src/main/main.js",
+  "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "npm run client",
-    "server": "electron . --host",
+    "start": "node launcher.js",
+    "server": "node server.js",
     "client": "electron .",
-    "check": "node --check src/main/main.js && node --check src/preload/preload.js && node --check src/server/room-server.js && node --check src/server/standalone.js && node --check src/host/host-main.js && node --check src/renderer/app.js",
+    "check": "node --check server.js && node --check launcher.js && node --check main.js && node --check preload.js && node --check renderer.js",
     "dist": "electron-builder --win portable"
   },
   "dependencies": {
@@ -28,7 +28,14 @@
       "output": "fresh-release"
     },
     "files": [
-      "src/**/*",
+      "server.js",
+      "launcher.js",
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "index.html",
+      "styles.css",
+      "docs/**/*",
       "package.json"
     ],
     "win": {

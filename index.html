@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MiniBeam</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <main class="browser-shell">
+        <section class="chrome">
+          <div class="tabs-row">
+            <div id="tabs" class="tabs"></div>
+            <button id="newTabButton" class="tab-plus" type="button" title="Новая вкладка">+</button>
+          </div>
+
+          <form id="addressForm" class="toolbar">
+            <button id="backButton" class="nav-button" type="button" title="Назад">‹</button>
+            <button id="forwardButton" class="nav-button" type="button" title="Вперёд">›</button>
+            <button id="reloadButton" class="nav-button" type="button" title="Обновить">↻</button>
+            <input id="addressInput" type="text" autocomplete="off" placeholder="Введите URL или поисковый запрос" />
+            <button class="menu-button" type="button" title="Меню">⋮</button>
+          </form>
+        </section>
+
+        <section class="browser-stage">
+          <webview
+            id="browserView"
+            class="browser-view"
+            src="https://duckduckgo.com"
+            partition="minibeam-guest"
+            allowpopups
+          ></webview>
+        </section>
+
+        <footer class="statusbar">
+          <span id="statusText">Подключение...</span>
+          <button id="copyInviteButtonFooter" type="button">Копировать приглашение</button>
+        </footer>
+      </main>
+
+      <aside class="side-panel">
+        <header class="room-header">
+          <span class="room-avatar">M</span>
+          <div>
+            <div id="roomLabel" class="room-title">MiniBeam</div>
+            <div id="onlineLabel" class="room-online">0 онлайн</div>
+          </div>
+          <button id="copyInviteButton" class="icon-button" type="button" title="Пригласить">＋</button>
+        </header>
+
+        <section class="participants-panel">
+          <h2>Участники</h2>
+          <div id="participants" class="participants"></div>
+        </section>
+
+        <section class="invite-panel">
+          <h2>Пригласите друзей</h2>
+          <p>Откройте этот адрес на другом клиенте в вашей сети.</p>
+          <button id="copyInviteButtonPanel" type="button">Копировать ссылку</button>
+          <span id="inviteUrl">...</span>
+        </section>
+
+        <section class="chat-panel">
+          <h2>Чат</h2>
+          <div id="messages" class="messages"></div>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" type="text" maxlength="600" placeholder="Сообщение" />
+            <button type="submit">Отправить</button>
+          </form>
+        </section>
+      </aside>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

@@ -1,148 +1,123 @@
 # MiniBeam Architecture
 
-MiniBeam is a local Hyperbeam-style browser room prototype. The host PC starts a local Node.js/Electron server, clients connect through Socket.IO, and everyone sees and controls the same hosted Chromium browser.
+MiniBeam is a local Hyperbeam-style browser room prototype. A local Node.js server keeps shared room state, and every Electron client renders the current web page in its own Chromium `webview`.
 
 ## High-Level Scheme
 
 ```text
-[Client 1: Electron room UI] ---\
-[Client 2: Electron room UI] ----> [Local Host Server on PC]
-[Client 3: Browser/Electron UI] -/             |
-                                               |--> Express static client
-                                               |--> Socket.IO realtime bus
-                                               |--> Room state
-                                               |--> Browser URL and tabs
-                                               |--> Participants and chat
-                                               |--> Hidden Chromium frame stream
+[Electron Client 1: Chromium webview] ---\
+[Electron Client 2: Chromium webview] ----> [Local Node.js Server]
+[Electron Client 3: Chromium webview] ---/             |
+                                                       |--> Express static files
+                                                       |--> Socket.IO realtime bus
+                                                       |--> Room state
+                                                       |--> Browser URL and tabs
+                                                       |--> Navigation history
+                                                       |--> Participants and chat
 ```
 
-## Host Server
-
-The host process is started by `02-start-server.bat`.
-
-Main modules:
+## Files
 
 ```text
-src/host/host-main.js
-src/server/room-server.js
+server.js      Node.js + Express + Socket.IO local server
+main.js        Electron main process
+preload.js     Safe bridge for server URL and clipboard
+renderer.js    Browser UI, webview control, Socket.IO sync, chat
+index.html     Client layout
+styles.css     Dark Hyperbeam-like UI
+launcher.js    Starts server and one Electron client for npm start
 ```
 
-Runtime stack:
+## Server
 
-```text
-Electron
-Node.js
-Express
-Socket.IO
-Hidden Chromium BrowserWindow
+The server is started by:
+
+```bash
+npm run server
 ```
 
-The host server is responsible for:
+or by `02-start-server.bat`.
 
-- creating a temporary room code such as `ROOM-4821`;
-- serving the client UI over HTTP;
-- accepting Socket.IO connections;
-- running the shared Chromium browser locally on the host PC;
-- storing room state in memory;
-- storing the current browser URL, title, tabs, participants, and recent chat;
-- broadcasting browser, room, participant, and chat events to all clients;
-- cleaning temporary Electron profile data when the server closes.
+The server stores:
 
-## Client UI
+- room code;
+- active tab id;
+- tabs: title, URL, history, history index;
+- participants;
+- recent chat messages.
 
-The client is started by `03-start-client.bat`.
+The server does not stream video and does not store video playback state. YouTube and direct video files are treated as normal web pages opened in Chromium.
 
-Main modules:
+## Client
 
-```text
-src/renderer/index.html
-src/renderer/styles.css
-src/renderer/app.js
+The client is started by:
+
+```bash
+npm run client
 ```
 
-The client UI is a full browser room, not a video player:
+or by `03-start-client.bat`.
 
-- left vertical room rail;
-- central shared Chromium browser stage;
-- Chrome-like tabs;
+The client contains:
+
+- real Chromium `webview`;
 - address bar;
-- Back, Forward, Reload controls;
-- extension/menu icons;
-- bottom room strip with participants and invite button;
-- right chat and invite panel.
+- Back / Forward / Reload;
+- synchronized tabs;
+- participants panel;
+- chat;
+- invite buttons.
 
-There are no video-specific controls:
+There are no video-player controls:
 
 ```text
-No Play/Pause button
-No Seek range
-No Volume range
-No local video player state
+No Play/Pause
+No Seek
+No Volume slider
 No player:* protocol
 ```
 
-YouTube, direct `.mp4`, `.webm`, `.ogg`, and normal web pages are opened through the same hosted Chromium browser path.
-
-## Socket.IO Events
+## Socket.IO Protocol
 
 Browser events:
 
 ```text
 browser:navigate
-browser:new-tab
+browser:updateURL
+browser:click
+browser:input
 browser:back
 browser:forward
 browser:reload
-browser:input
+browser:tab:new
+browser:tab:switch
+browser:tab:close
 browser:state
-browser:frame
 ```
 
-Room and chat events:
+Room events:
 
 ```text
+room:join
+room:leave
 room:state
+room:participants
+```
+
+Chat events:
+
+```text
 chat:message
 ```
 
-When a new participant joins, the server sends `room:state` with:
-
-```js
-{
-  roomCode: "ROOM-4821",
-  browserUrl: "https://youtube.com",
-  title: "YouTube",
-  tabs: [
-    { id: "tab-1", title: "YouTube", url: "https://youtube.com", active: true }
-  ],
-  participants: [],
-  messages: [],
-  blockedCount: 0
-}
-```
-
-The new participant receives the current URL, visible tabs, participant list, and chat history. No playback state is sent.
-
-## Browser Input
-
-Clients do not open websites locally in their own iframes. Instead, the host PC owns the actual Chromium instance.
-
-The client sends input events:
+## New Participant Flow
 
 ```text
-mouseDown
-mouseUp
-mouseMove
-mouseWheel
-keyDown
-keyUp
+1. Client starts and connects to the local Socket.IO server.
+2. Client emits room:join.
+3. Server adds participant to the room.
+4. Server sends room:state.
+5. Client renders tabs, participants, chat history, and opens the current URL in webview.
 ```
 
-The host forwards these events into the hidden Chromium `webContents` and broadcasts captured browser frames back to all clients.
-
-## Current MVP Limits
-
-- Tabs are represented in room state, but the host currently runs one active Chromium webContents.
-- Frame streaming is JPEG-over-Socket.IO for prototyping, not WebRTC yet.
-- Hosted Chromium audio capture is not implemented yet.
-- Permission roles are not strict yet; all connected clients can control the shared browser.
+`room:state` contains URL, tabs, navigation metadata, participants, and chat. It does not contain playback state.

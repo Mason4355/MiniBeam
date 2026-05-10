@@ -5,7 +5,7 @@ set "PATH=%ProgramFiles%\nodejs;%ProgramFiles(x86)%\nodejs;%PATH%"
 set "ELECTRON_RUN_AS_NODE="
 set "MINIBEAM_PORT=3847"
 
-echo [MiniBeam] Starting hosted browser server...
+echo [MiniBeam] Starting local sync server...
 echo Keep this window open.
 echo.
 
@@ -26,10 +26,5 @@ if not exist node_modules (
 )
 
 call npm run server
-
-echo.
-echo Cleaning MiniBeam host processes...
-taskkill /F /IM electron.exe /T >nul 2>nul
-taskkill /F /IM MiniBeam.exe /T >nul 2>nul
 echo.
 pause
