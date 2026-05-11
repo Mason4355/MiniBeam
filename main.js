@@ -15,9 +15,11 @@ const adBlockedSessions = new WeakSet();
 
 const blockedDomains = [
   "2mdn.net",
+  "ad.gt",
   "adform.net",
   "adnxs.com",
   "adsafeprotected.com",
+  "advertising.com",
   "adsrvr.org",
   "amazon-adsystem.com",
   "analytics.google.com",
@@ -34,10 +36,16 @@ const blockedDomains = [
   "googletagmanager.com",
   "googletagservices.com",
   "hotjar.com",
+  "imasdk.googleapis.com",
   "moatads.com",
+  "openx.net",
   "outbrain.com",
+  "pubmatic.com",
+  "rubiconproject.com",
   "scorecardresearch.com",
+  "smartadserver.com",
   "taboola.com",
+  "yieldmo.com",
   "yandexadexchange.net"
 ];
 
@@ -49,6 +57,137 @@ const blockedUrlPatterns = [
   /(^|[/?&_.-])tracking([/?&_.-]|$)/i,
   /(^|[/?&_.-])utm_pixel([/?&_.-]|$)/i
 ];
+
+const adCleanerScript = `
+(() => {
+  if (window.__minibeamAdCleanerInstalled) return;
+  window.__minibeamAdCleanerInstalled = true;
+
+  const blockedHosts = ${JSON.stringify(blockedDomains)};
+  const exactSelectors = [
+    ".video-ad-container",
+    ".video-ads",
+    ".ytp-ad-module",
+    ".ytp-ad-overlay-container",
+    ".ytp-ad-player-overlay",
+    ".ytp-ad-skip-button-container",
+    ".ytp-ad-text",
+    ".ytp-ad-preview-container",
+    ".ytp-ad-survey",
+    ".ad-container",
+    ".ads-container",
+    ".advertisement",
+    ".advertising",
+    ".banner-ad",
+    ".popup-ad",
+    ".overlay-ad",
+    ".sponsor",
+    ".sponsored",
+    "[id^='google_ads_']",
+    "[id*='google_ads']",
+    "[id*='doubleclick']",
+    "[class*='doubleclick']",
+    "iframe[id*='google_ads']",
+    "iframe[src*='doubleclick.net']",
+    "iframe[src*='googlesyndication.com']",
+    "iframe[src*='googleadservices.com']"
+  ];
+
+  const broadSelectors = [".ad", ".ads", "[class~='ad']", "[class~='ads']", "[id~='ad']", "[id~='ads']"];
+  const adWords = /(^|[-_\\s])(ad|ads|advert|advertising|sponsor|sponsored|banner|promo|preroll|midroll|doubleclick|googlesyndication)([-_\\s]|$)/i;
+  const protectedMedia = "video,audio,canvas,svg,object,embed";
+
+  function hostIsBlocked(rawUrl) {
+    try {
+      const host = new URL(rawUrl, location.href).hostname.replace(/^www\\./, "").toLowerCase();
+      return blockedHosts.some((domain) => host === domain || host.endsWith("." + domain));
+    } catch {
+      return false;
+    }
+  }
+
+  function hasProtectedContent(element) {
+    if (!element || element.nodeType !== 1) return true;
+    if (element.matches(protectedMedia)) return true;
+    return Boolean(element.querySelector(protectedMedia));
+  }
+
+  function isExplicitAd(element) {
+    if (!element || element.nodeType !== 1 || hasProtectedContent(element)) return false;
+    if (element.tagName === "IFRAME" && hostIsBlocked(element.src)) return true;
+    const marker = [element.id, element.className, element.getAttribute("aria-label"), element.getAttribute("data-testid")]
+      .filter(Boolean)
+      .join(" ");
+    return adWords.test(marker);
+  }
+
+  function isOverlayAd(element) {
+    if (!isExplicitAd(element)) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    const zIndex = Number.parseInt(style.zIndex || "0", 10) || 0;
+    const area = rect.width * rect.height;
+    const viewportArea = Math.max(1, innerWidth * innerHeight);
+    const fixed = style.position === "fixed" || style.position === "sticky";
+    return fixed || zIndex >= 1000 || area / viewportArea > 0.12;
+  }
+
+  function removeElement(element) {
+    if (!element || element.dataset?.minibeamRemoved === "1") return;
+    if (hasProtectedContent(element)) return;
+    element.dataset.minibeamRemoved = "1";
+    element.style.setProperty("display", "none", "important");
+    element.style.setProperty("visibility", "hidden", "important");
+    element.remove();
+  }
+
+  function clean(root = document) {
+    for (const selector of exactSelectors) {
+      root.querySelectorAll?.(selector).forEach((element) => {
+        if (isExplicitAd(element) || selector.includes("ytp-ad") || selector.includes("video-ad")) removeElement(element);
+      });
+    }
+
+    for (const selector of broadSelectors) {
+      root.querySelectorAll?.(selector).forEach((element) => {
+        if (isOverlayAd(element)) removeElement(element);
+      });
+    }
+
+    root.querySelectorAll?.("iframe").forEach((iframe) => {
+      if (hostIsBlocked(iframe.src)) removeElement(iframe);
+    });
+  }
+
+  const scheduleClean = (() => {
+    let pending = false;
+    return () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        clean(document);
+      });
+    };
+  })();
+
+  clean(document);
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === 1) {
+          if (isOverlayAd(node) || (node.tagName === "IFRAME" && hostIsBlocked(node.src))) removeElement(node);
+          clean(node);
+        }
+      }
+    }
+    scheduleClean();
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  window.addEventListener("load", scheduleClean, { once: true });
+  setInterval(scheduleClean, 2500);
+})();
+`;
 
 fs.mkdirSync(runtimeDir, { recursive: true });
 app.setPath("userData", runtimeDir);
@@ -172,6 +311,7 @@ function ensureView(tab) {
 
   view.webContents.on("enter-html-full-screen", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
       mainWindow.maximize();
       sendBrowserEvent("html-fullscreen", { fullscreen: true });
       setTimeout(updateActiveViewBounds, 120);
@@ -185,7 +325,9 @@ function ensureView(tab) {
   view.webContents.on("did-stop-loading", () => {
     sendBrowserEvent("loading", { tabId: tab.id, loading: false });
     sendNavigationState(tab.id);
+    injectAdCleaner(view);
   });
+  view.webContents.on("dom-ready", () => injectAdCleaner(view));
   view.webContents.on("did-navigate", (_event, url) => reportNavigation(tab.id, url));
   view.webContents.on("did-navigate-in-page", (_event, url) => reportNavigation(tab.id, url));
   view.webContents.on("page-title-updated", (_event, title) => {
@@ -210,6 +352,11 @@ function updateActiveViewBounds() {
   if (!mainWindow || !view) return;
   view.setBounds(browserBounds);
   view.setAutoResize({ width: true, height: true });
+}
+
+function injectAdCleaner(view) {
+  if (!view || view.webContents.isDestroyed()) return;
+  view.webContents.executeJavaScript(adCleanerScript, true).catch(() => {});
 }
 
 function installAdBlock(targetSession) {

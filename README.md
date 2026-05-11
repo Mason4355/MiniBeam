@@ -14,9 +14,11 @@ It is a browser room, not a video player. There are no Play/Pause, volume, seek 
 
 The server stores room state: tabs, active tab, URL history, participants, and chat. New clients receive `room:state` and immediately see the current room.
 
-Electron blocks common advertising and tracker domains through `session.webRequest.onBeforeRequest`. The blocker skips main-frame navigation and does not pattern-block media requests, so HTML5 players are less likely to break.
+Electron blocks common advertising and tracker domains through `session.webRequest.onBeforeRequest`. A lightweight injected cleaner also removes obvious ad iframes, side banners, video ad overlays, and dynamically inserted ad nodes through `MutationObserver`. The blocker skips main-frame navigation and avoids removing elements that contain `video`, `audio`, `canvas`, `object`, or `embed`, so HTML5 players are less likely to break.
 
 When a site enters HTML fullscreen, MiniBeam expands the browser area while keeping the tab bar and address bar visible.
+
+MiniBeam uses Electron Chromium, so normal HTML5 video sites such as YouTube, Vimeo, Dailymotion, and direct `.mp4/.webm/.ogg` links render through Chromium. Browser DRM that depends on Google Chrome Widevine is not bundled automatically by Electron and would need a separate licensed CDM/runtime setup.
 
 ## BAT Files
 
