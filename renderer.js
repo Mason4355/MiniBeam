@@ -9,7 +9,6 @@ const ui = {
   forwardButton: document.querySelector("#forwardButton"),
   reloadButton: document.querySelector("#reloadButton"),
   statusText: document.querySelector("#statusText"),
-  adblockStatus: document.querySelector("#adblockStatus"),
   roomLabel: document.querySelector("#roomLabel"),
   onlineLabel: document.querySelector("#onlineLabel"),
   participants: document.querySelector("#participants"),
@@ -26,13 +25,14 @@ const state = {
   socket: null,
   selfId: "",
   roomCode: "",
-  inviteUrl: serverUrl,
   activeTabId: "",
   tabs: [],
+  participants: [],
+  messages: [],
   applyingRemote: false
 };
 
-loadSocketClient().then(boot).catch(() => {
+loadSocketClient().then(start).catch(() => {
   ui.statusText.textContent = "Сервер не найден";
 });
 
@@ -47,11 +47,11 @@ function loadSocketClient() {
   });
 }
 
-function boot() {
+function start() {
   state.socket = io(serverUrl, { transports: ["websocket", "polling"] });
   bindSocket();
   bindUi();
-  bindBrowserView();
+  bindBrowserEvents();
 }
 
 function bindSocket() {
@@ -66,52 +66,65 @@ function bindSocket() {
   });
 
   state.socket.on("room:state", (room) => {
-    state.roomCode = room.roomCode;
     state.selfId = room.selfId || state.selfId;
-    state.inviteUrl = serverUrl;
-    applyBrowserState(room);
-    renderParticipants(room.participants || []);
-    renderMessages(room.messages || []);
-    ui.roomLabel.textContent = `Комната ${room.roomCode}`;
-    ui.inviteUrl.textContent = state.inviteUrl;
+    state.roomCode = room.roomCode;
+    state.tabs = room.tabs || [];
+    state.activeTabId = room.activeTabId || "";
+    state.participants = room.participants || [];
+    state.messages = room.messages || [];
+    syncAll();
   });
 
-  state.socket.on("room:participants", renderParticipants);
-  state.socket.on("browser:state", applyBrowserState);
-  state.socket.on("browser:reload", (payload) => {
-    if (payload.sourceId === state.selfId) return;
-    window.miniBeam.browser.reload();
+  state.socket.on("participants:update", (participants) => {
+    state.participants = participants || [];
+    renderParticipants();
   });
-  state.socket.on("chat:message", appendMessage);
+
+  state.socket.on("tab:create", (payload) => {
+    upsertTab(payload.tab);
+    state.activeTabId = payload.activeTabId || payload.tab?.id || state.activeTabId;
+    syncTabs(true);
+  });
+
+  state.socket.on("tab:close", (payload) => {
+    state.tabs = payload.tabs || state.tabs.filter((tab) => tab.id !== payload.tabId);
+    state.activeTabId = payload.activeTabId || state.tabs[0]?.id || "";
+    syncTabs(true);
+  });
+
+  state.socket.on("tab:switch", (payload) => {
+    state.tabs = payload.tabs || state.tabs;
+    state.activeTabId = payload.activeTabId || payload.tabId || state.activeTabId;
+    syncTabs(true);
+  });
+
+  state.socket.on("tab:updateURL", (payload) => {
+    if (payload.tabs) state.tabs = payload.tabs;
+    else upsertTab(payload.tab);
+    state.activeTabId = payload.activeTabId || state.activeTabId;
+    syncTabs(payload.sourceId !== state.selfId);
+  });
+
+  state.socket.on("chat:message", (message) => {
+    state.messages.push(message);
+    renderMessages();
+  });
 }
 
 function bindUi() {
   ui.addressForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const url = normalizeUrl(ui.addressInput.value);
-    if (!url) return;
-    navigateLocal(url);
-    state.socket.emit("browser:navigate", { url });
+    if (!url || !state.activeTabId) return;
+    state.applyingRemote = false;
+    window.miniBeam.browser.navigate(state.activeTabId, url);
+    state.socket.emit("tab:updateURL", { tabId: state.activeTabId, url, title: getTitleFromUrl(url) });
   });
 
-  ui.backButton.addEventListener("click", async () => {
-    await window.miniBeam.browser.back();
-    state.socket.emit("browser:back");
-  });
-
-  ui.forwardButton.addEventListener("click", async () => {
-    await window.miniBeam.browser.forward();
-    state.socket.emit("browser:forward");
-  });
-
-  ui.reloadButton.addEventListener("click", async () => {
-    await window.miniBeam.browser.reload();
-    state.socket.emit("browser:reload");
-  });
-
-  ui.newTabButton.addEventListener("click", () => {
-    state.socket.emit("browser:tab:new");
-  });
+  ui.backButton.addEventListener("click", () => window.miniBeam.browser.back());
+  ui.forwardButton.addEventListener("click", () => window.miniBeam.browser.forward());
+  ui.reloadButton.addEventListener("click", () => window.miniBeam.browser.reload());
+  ui.newTabButton.addEventListener("click", () => state.socket.emit("tab:create"));
 
   ui.copyInviteButton.addEventListener("click", () => copyInvite(ui.copyInviteButton, "＋"));
   ui.copyInviteButtonPanel.addEventListener("click", () => copyInvite(ui.copyInviteButtonPanel, "Копировать ссылку"));
@@ -124,167 +137,146 @@ function bindUi() {
     state.socket.emit("chat:message", text);
     ui.chatInput.value = "";
   });
-
-  window.addEventListener("keydown", (event) => {
-    if (isTypingInUi()) return;
-    state.socket.emit("browser:input", { tabId: state.activeTabId, key: event.key });
-  });
 }
 
-function bindBrowserView() {
+function bindBrowserEvents() {
   window.miniBeam.browser.onEvent((event) => {
-    if (event.type === "loading") {
+    if (event.type === "loading" && event.tabId === state.activeTabId) {
       ui.statusText.textContent = event.loading ? "Загрузка..." : "Готово";
     }
 
-    if (event.type === "navigation-state") {
+    if (event.type === "navigation-state" && event.tabId === state.activeTabId) {
       ui.backButton.disabled = !event.canGoBack;
       ui.forwardButton.disabled = !event.canGoForward;
     }
 
     if (event.type === "navigated") {
-      reportBrowserUrl(event.url, event.title);
+      updateLocalTab(event.tabId, { url: event.url, title: event.title || getTitleFromUrl(event.url) });
+      if (!state.applyingRemote) {
+        state.socket.emit("tab:updateURL", { tabId: event.tabId, url: event.url, title: event.title || getTitleFromUrl(event.url) });
+      }
     }
 
     if (event.type === "title") {
-      updateActiveTabTitle(event.title);
-      state.socket.emit("browser:updateURL", {
-        tabId: state.activeTabId,
-        url: event.url,
-        title: event.title
-      });
+      updateLocalTab(event.tabId, { title: event.title, url: event.url });
+      if (!state.applyingRemote) {
+        state.socket.emit("tab:updateURL", { tabId: event.tabId, url: event.url, title: event.title });
+      }
     }
 
     if (event.type === "new-window") {
-      state.socket.emit("browser:tab:new");
-      setTimeout(() => {
-        navigateLocal(event.url);
-        state.socket.emit("browser:navigate", { url: event.url });
-      }, 150);
-    }
-
-    if (event.type === "error") {
-      ui.statusText.textContent = event.errorDescription || "Страница не открылась";
-    }
-
-    if (event.type === "adblock") {
-      ui.adblockStatus.textContent = `AdBlock: ${event.blockedCount || 0}`;
+      state.socket.emit("tab:create", { url: event.url });
     }
   });
 }
 
-function applyBrowserState(nextState) {
-  const previousActiveTabId = state.activeTabId;
-  state.activeTabId = nextState.activeTabId || state.activeTabId;
-  state.tabs = nextState.tabs || state.tabs;
+function syncAll() {
+  renderRoom();
   renderTabs();
-  updateNavigationButtonsFromTabs();
-
-  const activeChanged = previousActiveTabId && previousActiveTabId !== state.activeTabId;
-  if (nextState.url && (activeChanged || ui.addressInput.value !== nextState.url)) {
-    navigateLocal(nextState.url, true);
-  }
-
-  if (nextState.url) ui.addressInput.value = nextState.url;
+  renderParticipants();
+  renderMessages();
+  syncBrowserViews(true);
 }
 
-function navigateLocal(url, remote = false) {
+function syncTabs(remote = false) {
+  renderTabs();
+  renderRoom();
+  syncBrowserViews(remote);
+}
+
+function syncBrowserViews(remote = false) {
   state.applyingRemote = remote;
-  ui.addressInput.value = url;
-  window.miniBeam.browser.navigate(url);
-  setTimeout(() => {
-    state.applyingRemote = false;
-  }, 500);
+  window.miniBeam.tabs.sync(state.tabs, state.activeTabId).finally(() => {
+    const activeTab = getActiveTab();
+    if (activeTab) ui.addressInput.value = activeTab.url;
+    setTimeout(() => {
+      state.applyingRemote = false;
+    }, 500);
+  });
 }
 
-function reportBrowserUrl(url, title = "") {
-  ui.addressInput.value = url;
-  updateActiveTabUrl(url);
-  if (state.applyingRemote) return;
-  state.socket.emit("browser:updateURL", {
-    tabId: state.activeTabId,
-    url,
-    title: title || getTitleFromUrl(url)
-  });
+function renderRoom() {
+  ui.roomLabel.textContent = state.roomCode ? `Комната ${state.roomCode}` : "MiniBeam";
+  ui.inviteUrl.textContent = serverUrl;
 }
 
 function renderTabs() {
   ui.tabs.innerHTML = "";
   state.tabs.forEach((tab) => {
     const button = document.createElement("button");
-    button.className = `tab ${tab.active ? "active" : ""}`;
+    button.className = `tab ${tab.id === state.activeTabId ? "active" : ""}`;
     button.type = "button";
-    button.title = tab.url || tab.title || "New tab";
+    button.title = tab.url;
     button.innerHTML = `
       <span class="tab-dot"></span>
       <span class="tab-title">${escapeHtml(tab.title || "New tab")}</span>
       <span class="tab-close" title="Закрыть">×</span>
     `;
-    button.addEventListener("click", () => {
-      state.socket.emit("browser:tab:switch", { tabId: tab.id });
-    });
+    button.addEventListener("click", () => state.socket.emit("tab:switch", { tabId: tab.id }));
     button.querySelector(".tab-close").addEventListener("click", (event) => {
       event.stopPropagation();
-      state.socket.emit("browser:tab:close", { tabId: tab.id });
+      state.socket.emit("tab:close", { tabId: tab.id });
     });
     ui.tabs.append(button);
   });
+
+  const activeTab = getActiveTab();
+  ui.addressInput.value = activeTab?.url || "";
 }
 
-function renderParticipants(participants) {
-  ui.onlineLabel.textContent = `${participants.length} онлайн`;
+function renderParticipants() {
+  ui.onlineLabel.textContent = `${state.participants.length} онлайн`;
   ui.participants.innerHTML = "";
-  participants.forEach((participant) => {
+  state.participants.forEach((participant) => {
     const item = document.createElement("div");
     item.className = "participant";
     item.innerHTML = `
       <span class="avatar">${escapeHtml(getInitials(participant.name))}</span>
       <div>
         <strong>${escapeHtml(participant.name)}</strong>
-        <small>${participant.role === "host" ? "host" : "online"}</small>
+        <small>${participant.online ? "online" : "offline"} · ${participant.role}</small>
       </div>
     `;
     ui.participants.append(item);
   });
 }
 
-function renderMessages(messages) {
+function renderMessages() {
   ui.messages.innerHTML = "";
-  messages.forEach(appendMessage);
-}
-
-function appendMessage(message) {
-  const item = document.createElement("article");
-  item.className = "message";
-  item.innerHTML = `
-    <strong>${escapeHtml(message.author)}</strong>
-    <time>${new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-    <p>${escapeHtml(message.text)}</p>
-  `;
-  ui.messages.append(item);
+  state.messages.forEach((message) => {
+    const item = document.createElement("article");
+    item.className = "message";
+    item.innerHTML = `
+      <strong>${escapeHtml(message.author)}</strong>
+      <time>${new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+      <p>${escapeHtml(message.text)}</p>
+    `;
+    ui.messages.append(item);
+  });
   ui.messages.scrollTop = ui.messages.scrollHeight;
 }
 
-function updateNavigationButtonsFromTabs() {
-  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
-  if (!activeTab) return;
-  ui.backButton.disabled = !activeTab.canGoBack;
-  ui.forwardButton.disabled = !activeTab.canGoForward;
+function upsertTab(tab) {
+  if (!tab) return;
+  const index = state.tabs.findIndex((item) => item.id === tab.id);
+  if (index === -1) state.tabs.push(tab);
+  else state.tabs[index] = tab;
 }
 
-function updateActiveTabUrl(url) {
-  const tab = state.tabs.find((item) => item.id === state.activeTabId);
-  if (tab) tab.url = url;
-}
-
-function updateActiveTabTitle(title) {
-  const tab = state.tabs.find((item) => item.id === state.activeTabId);
-  if (tab) tab.title = title || "New tab";
+function updateLocalTab(tabId, patch) {
+  const tab = state.tabs.find((item) => item.id === tabId);
+  if (!tab) return;
+  Object.assign(tab, patch);
+  if (tabId === state.activeTabId && patch.url) ui.addressInput.value = patch.url;
   renderTabs();
 }
 
+function getActiveTab() {
+  return state.tabs.find((tab) => tab.id === state.activeTabId);
+}
+
 function copyInvite(button, originalText) {
-  window.miniBeam.copy(`${state.roomCode} ${state.inviteUrl}`);
+  window.miniBeam.copy(`${state.roomCode} ${serverUrl}`);
   flash(button, "Скопировано", originalText);
 }
 
@@ -298,7 +290,7 @@ function normalizeUrl(value) {
 
 function getTitleFromUrl(url) {
   try {
-    return new URL(url).hostname.replace(/^www\./, "");
+    return new URL(url).hostname.replace(/^www\./, "") || "New tab";
   } catch {
     return "New tab";
   }
@@ -319,10 +311,6 @@ function getInitials(name) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
-}
-
-function isTypingInUi() {
-  return [ui.addressInput, ui.chatInput].includes(document.activeElement);
 }
 
 function flash(button, text, original) {

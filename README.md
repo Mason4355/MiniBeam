@@ -1,26 +1,30 @@
 # MiniBeam
 
-MiniBeam is a portable Electron prototype for a shared browser room.
+MiniBeam is a local Hyperbeam-style MVP: one PC starts a small Node.js room server, and Electron clients connect to it as synchronized browser windows.
 
-The project is split into two parts:
+It is a browser room, not a video player. There are no Play/Pause, volume, seek bars, or custom video controls. Pages, YouTube, and direct HTML5 video links open inside Electron Chromium through `BrowserView`.
 
-- `server.js` starts the local Node.js + Express + Socket.IO room server.
-- `main.js` starts the Electron client.
-- `renderer.js` controls the browser UI, tabs, URL synchronization, participants, and chat.
+## What Is Inside
 
-This is a local Hyperbeam-style MVP. It does not use an external cloud server. Every client renders pages through Electron Chromium and synchronizes room browser state through the local server.
+- `server.js` - local Express + Socket.IO room server.
+- `main.js` - Electron main process with embedded Chromium `BrowserView` tabs.
+- `preload.js` - safe bridge between Electron and the UI.
+- `renderer.js` - tabs, address bar, participants, chat, and Socket.IO sync.
+- `index.html` + `styles.css` - dark Hyperbeam-like browser interface.
 
-## Run
+The server stores room state: tabs, active tab, URL history, participants, and chat. New clients receive `room:state` and immediately see the current room.
 
-Use the BAT files while the app is being patched:
+## BAT Files
 
-- `01-install-deps.bat` installs dependencies.
-- `02-start-server.bat` starts the local synchronization server.
-- `03-start-client.bat` starts the Electron browser client.
-- `04-check-code.bat` checks JavaScript syntax.
-- `05-build-portable-exe.bat` is paused intentionally.
+- `01-install-deps.bat` - install dependencies.
+- `02-start-server.bat` - start the local sync server.
+- `03-start-client.bat` - start one Electron client.
+- `04-check-code.bat` - check JavaScript syntax.
+- `05-build-portable-exe.bat` - build `fresh-release\MiniBeam.exe` later.
 
-Manual commands:
+For testing several clients, keep `02-start-server.bat` open and run `03-start-client.bat` multiple times.
+
+## Manual Run
 
 ```bash
 npm install
@@ -28,19 +32,25 @@ npm run server
 npm run client
 ```
 
-Or start one local server plus one client together:
+Or start one server and one client together:
 
 ```bash
 npm start
 ```
 
-## Build Portable EXE Later
+## Check
 
-When the app feels ready:
+```bash
+npm run check
+```
+
+## Portable Build Later
 
 ```bash
 npm run dist
 ```
+
+The build result will be:
 
 ```text
 fresh-release\MiniBeam.exe

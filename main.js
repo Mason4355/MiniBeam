@@ -5,28 +5,19 @@ const { app, BrowserView, BrowserWindow, Menu, ipcMain, session } = require("ele
 
 const runtimeDir = path.join(os.tmpdir(), `MiniBeamClient-${process.pid}`);
 const serverUrl = process.env.MINIBEAM_SERVER_URL || "http://127.0.0.1:3847";
-const browserPartition = `persist:minibeam-browser-${process.pid}`;
+const viewPartitionPrefix = `minibeam-${process.pid}`;
 
 let mainWindow;
-let browserView;
-let isQuitting = false;
-let blockedCount = 0;
+let activeTabId = "";
+const views = new Map();
 
 fs.mkdirSync(runtimeDir, { recursive: true });
 app.setPath("userData", runtimeDir);
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 app.whenReady().then(createWindow);
-
 app.on("window-all-closed", () => app.quit());
-
-app.on("before-quit", async (event) => {
-  if (isQuitting) return;
-  event.preventDefault();
-  isQuitting = true;
-  await cleanup();
-  app.exit(0);
-});
+app.on("before-quit", cleanup);
 
 async function createWindow() {
   Menu.setApplicationMenu(null);
@@ -47,19 +38,62 @@ async function createWindow() {
   });
 
   await mainWindow.loadFile(path.join(__dirname, "index.html"));
-  createBrowserView();
-  mainWindow.on("resize", updateBrowserBounds);
-  mainWindow.on("maximize", updateBrowserBounds);
-  mainWindow.on("unmaximize", updateBrowserBounds);
+  mainWindow.on("resize", updateActiveViewBounds);
+  mainWindow.on("maximize", updateActiveViewBounds);
+  mainWindow.on("unmaximize", updateActiveViewBounds);
 }
 
-function createBrowserView() {
-  const browserSession = session.fromPartition(browserPartition);
-  installAdBlocker(browserSession);
+ipcMain.handle("tabs:sync", async (_event, tabs = [], nextActiveTabId = "") => {
+  const knownIds = new Set(tabs.map((tab) => tab.id));
+  for (const [tabId, view] of views.entries()) {
+    if (!knownIds.has(tabId)) {
+      try {
+        if (mainWindow?.getBrowserView() === view) mainWindow.setBrowserView(null);
+        view.webContents.close({ waitForBeforeUnload: false });
+      } catch {}
+      views.delete(tabId);
+    }
+  }
 
-  browserView = new BrowserView({
+  for (const tab of tabs) {
+    const view = ensureView(tab);
+    const currentUrl = view.webContents.getURL();
+    if (tab.url && currentUrl !== tab.url) {
+      try {
+        await view.webContents.loadURL(tab.url);
+      } catch {}
+    }
+  }
+
+  if (nextActiveTabId) setActiveView(nextActiveTabId);
+});
+
+ipcMain.handle("browser:navigate", async (_event, tabId, url) => {
+  const view = views.get(tabId || activeTabId);
+  if (!view || !url) return;
+  await view.webContents.loadURL(url);
+});
+
+ipcMain.handle("browser:back", () => {
+  const view = views.get(activeTabId);
+  if (view?.webContents.canGoBack()) view.webContents.goBack();
+});
+
+ipcMain.handle("browser:forward", () => {
+  const view = views.get(activeTabId);
+  if (view?.webContents.canGoForward()) view.webContents.goForward();
+});
+
+ipcMain.handle("browser:reload", () => {
+  views.get(activeTabId)?.webContents.reload();
+});
+
+function ensureView(tab) {
+  if (views.has(tab.id)) return views.get(tab.id);
+
+  const view = new BrowserView({
     webPreferences: {
-      partition: browserPartition,
+      partition: `${viewPartitionPrefix}-${tab.id}`,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -67,92 +101,68 @@ function createBrowserView() {
     }
   });
 
-  mainWindow.setBrowserView(browserView);
-  updateBrowserBounds();
-
-  browserView.webContents.setUserAgent(
+  view.webContents.setUserAgent(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
   );
 
-  browserView.webContents.setWindowOpenHandler(({ url }) => {
-    if (shouldBlockUrl(url, "popup")) {
-      blockedCount += 1;
-      sendBrowserEvent("adblock", { blockedCount, url });
-      return { action: "deny" };
-    }
-    sendBrowserEvent("new-window", { url });
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    sendBrowserEvent("new-window", { tabId: tab.id, url });
     return { action: "deny" };
   });
 
-  browserView.webContents.on("did-start-loading", () => sendBrowserEvent("loading", { loading: true }));
-  browserView.webContents.on("did-stop-loading", () => {
-    sendBrowserEvent("loading", { loading: false });
-    sendNavigationState();
+  view.webContents.on("did-start-loading", () => sendBrowserEvent("loading", { tabId: tab.id, loading: true }));
+  view.webContents.on("did-stop-loading", () => {
+    sendBrowserEvent("loading", { tabId: tab.id, loading: false });
+    sendNavigationState(tab.id);
   });
-  browserView.webContents.on("did-navigate", (_event, url) => reportNavigation(url));
-  browserView.webContents.on("did-navigate-in-page", (_event, url) => reportNavigation(url));
-  browserView.webContents.on("page-title-updated", (_event, title) => {
-    sendBrowserEvent("title", { title, url: browserView.webContents.getURL() });
-  });
-  browserView.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (isMainFrame && errorCode !== -3) {
-      sendBrowserEvent("error", { errorDescription, url: validatedURL });
-    }
+  view.webContents.on("did-navigate", (_event, url) => reportNavigation(tab.id, url));
+  view.webContents.on("did-navigate-in-page", (_event, url) => reportNavigation(tab.id, url));
+  view.webContents.on("page-title-updated", (_event, title) => {
+    sendBrowserEvent("title", { tabId: tab.id, title, url: view.webContents.getURL() });
   });
 
-  browserView.webContents.loadURL("https://duckduckgo.com");
+  views.set(tab.id, view);
+  return view;
 }
 
-function updateBrowserBounds() {
-  if (!mainWindow || !browserView) return;
+function setActiveView(tabId) {
+  const view = views.get(tabId);
+  if (!mainWindow || !view) return;
+  activeTabId = tabId;
+  mainWindow.setBrowserView(view);
+  updateActiveViewBounds();
+  sendNavigationState(tabId);
+}
+
+function updateActiveViewBounds() {
+  const view = views.get(activeTabId);
+  if (!mainWindow || !view) return;
   const [width, height] = mainWindow.getContentSize();
   const rightPanel = width <= 1100 ? 290 : 330;
   const topChrome = 74;
   const bottomStatus = 42;
 
-  browserView.setBounds({
+  view.setBounds({
     x: 0,
     y: topChrome,
     width: Math.max(320, width - rightPanel),
     height: Math.max(240, height - topChrome - bottomStatus)
   });
-  browserView.setAutoResize({ width: true, height: true });
+  view.setAutoResize({ width: true, height: true });
 }
 
-ipcMain.handle("browser:navigate", async (_event, url) => {
-  if (!browserView || !url) return;
-  await browserView.webContents.loadURL(url);
-});
-
-ipcMain.handle("browser:back", () => {
-  if (browserView?.webContents.canGoBack()) browserView.webContents.goBack();
-});
-
-ipcMain.handle("browser:forward", () => {
-  if (browserView?.webContents.canGoForward()) browserView.webContents.goForward();
-});
-
-ipcMain.handle("browser:reload", () => {
-  if (browserView) browserView.webContents.reload();
-});
-
-ipcMain.handle("browser:state", () => ({
-  url: browserView?.webContents.getURL() || "",
-  title: browserView?.webContents.getTitle() || "New tab",
-  canGoBack: browserView?.webContents.canGoBack() || false,
-  canGoForward: browserView?.webContents.canGoForward() || false,
-  blockedCount
-}));
-
-function reportNavigation(url) {
-  sendBrowserEvent("navigated", { url, title: browserView.webContents.getTitle() || "" });
-  sendNavigationState();
+function reportNavigation(tabId, url) {
+  const view = views.get(tabId);
+  sendBrowserEvent("navigated", { tabId, url, title: view?.webContents.getTitle() || "" });
+  sendNavigationState(tabId);
 }
 
-function sendNavigationState() {
+function sendNavigationState(tabId) {
+  const view = views.get(tabId);
   sendBrowserEvent("navigation-state", {
-    canGoBack: browserView?.webContents.canGoBack() || false,
-    canGoForward: browserView?.webContents.canGoForward() || false
+    tabId,
+    canGoBack: view?.webContents.canGoBack() || false,
+    canGoForward: view?.webContents.canGoForward() || false
   });
 }
 
@@ -162,123 +172,18 @@ function sendBrowserEvent(type, payload = {}) {
 }
 
 async function cleanup() {
-  if (browserView) {
+  for (const view of views.values()) {
     try {
-      browserView.webContents.stop();
-      browserView.webContents.close({ waitForBeforeUnload: false });
-      mainWindow?.setBrowserView(null);
+      view.webContents.stop();
+      view.webContents.close({ waitForBeforeUnload: false });
     } catch {}
-    browserView = null;
   }
+  views.clear();
   try {
     await session.defaultSession.clearCache();
     await session.defaultSession.clearStorageData();
-    await session.fromPartition(browserPartition).clearCache();
-    await session.fromPartition(browserPartition).clearStorageData();
   } catch {}
   try {
     fs.rmSync(runtimeDir, { recursive: true, force: true });
   } catch {}
 }
-
-function installAdBlocker(targetSession) {
-  targetSession.webRequest.onBeforeRequest((details, callback) => {
-    const blocked = shouldBlockUrl(details.url, details.resourceType);
-    if (blocked) {
-      blockedCount += 1;
-      sendBrowserEvent("adblock", { blockedCount, url: details.url, resourceType: details.resourceType });
-    }
-    callback({ cancel: blocked });
-  });
-}
-
-function shouldBlockUrl(rawUrl, resourceType = "") {
-  let parsed;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    return false;
-  }
-
-  if (!["http:", "https:"].includes(parsed.protocol)) return false;
-  if (resourceType === "mainFrame") return false;
-
-  const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
-  const target = `${host}${parsed.pathname}${parsed.search}`.toLowerCase();
-
-  return AD_HOSTS.some((item) => host === item || host.endsWith(`.${item}`) || host.includes(item)) ||
-    AD_PATTERNS.some((item) => target.includes(item));
-}
-
-const AD_HOSTS = [
-  "doubleclick.net",
-  "googlesyndication.com",
-  "googleadservices.com",
-  "googletagservices.com",
-  "googletagmanager.com",
-  "google-analytics.com",
-  "adservice.google",
-  "pagead2.googlesyndication.com",
-  "securepubads.g.doubleclick.net",
-  "adnxs.com",
-  "adsafeprotected.com",
-  "scorecardresearch.com",
-  "taboola.com",
-  "outbrain.com",
-  "mgid.com",
-  "criteo.com",
-  "rubiconproject.com",
-  "pubmatic.com",
-  "openx.net",
-  "smartadserver.com",
-  "adform.net",
-  "bidswitch.net",
-  "exoclick.com",
-  "popads.net",
-  "propellerads.com",
-  "onclickads.net",
-  "realsrv.com",
-  "hilltopads.net",
-  "adsterra.com",
-  "clickadu.com",
-  "popcash.net",
-  "ad.mail.ru",
-  "top.mail.ru",
-  "an.yandex.ru",
-  "mc.yandex.ru",
-  "yabs.yandex.ru",
-  "adfox.ru",
-  "ads.adfox.ru",
-  "adriver.ru",
-  "mytarget.ru",
-  "betweendigital.com",
-  "buzzoola.com",
-  "relap.io"
-];
-
-const AD_PATTERNS = [
-  "/ads/",
-  "/ad/",
-  "/advert",
-  "/advertisement",
-  "/banner",
-  "/banners",
-  "/prebid",
-  "/vast",
-  "/vpaid",
-  "/preroll",
-  "/popunder",
-  "/clickunder",
-  "/counter",
-  "/analytics",
-  "/tracking",
-  "/track?",
-  "/pixel",
-  "adfox",
-  "adriver",
-  "yandex_rtb",
-  "googleads",
-  "googlesyndication",
-  "doubleclick",
-  "adservice"
-];
