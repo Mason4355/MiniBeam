@@ -151,8 +151,6 @@ const adCleanerScript = `
     "ytd-promoted-sparkles-web-renderer",
     "ytd-promoted-video-renderer",
     "ytd-rich-section-renderer",
-    ".video-ad-container",
-    ".video-ads",
     ".ytp-ad-module",
     ".ytp-ad-overlay-container",
     ".ytp-ad-player-overlay",
@@ -171,13 +169,6 @@ const adCleanerScript = `
     ".sponsored",
     ".sponsored-content",
     ".native-ad",
-    ".outstream-ad",
-    ".companion-ad",
-    ".preroll-ad",
-    ".midroll-ad",
-    ".postroll-ad",
-    ".vast-ad",
-    ".vpaid-ad",
     "[aria-label*='advertisement' i]",
     "[aria-label*='реклама' i]",
     "[id^='google_ads_']",
@@ -239,12 +230,9 @@ const adCleanerScript = `
   }
 
   function clean(root = document) {
-    ensureStyle();
-    skipVideoAds();
-
     for (const selector of exactSelectors) {
       root.querySelectorAll?.(selector).forEach((element) => {
-        if (isExplicitAd(element) || selector.includes("ytp-ad") || selector.includes("video-ad")) removeElement(element);
+        if (isExplicitAd(element) || selector.includes("ytp-ad")) removeElement(element);
       });
     }
 
@@ -325,6 +313,7 @@ app.on("before-quit", cleanup);
 async function createWindow() {
   Menu.setApplicationMenu(null);
   installAdBlock(session.defaultSession);
+  configureBrowserPermissions(session.defaultSession);
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -413,16 +402,17 @@ function ensureView(tab) {
   const partition = chromeLikeSession;
   const viewSession = session.fromPartition(partition);
   installAdBlock(viewSession);
+  configureBrowserPermissions(viewSession);
 
   const view = new WebContentsView({
     webPreferences: {
       partition,
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: true,
+      sandbox: false,
       plugins: true,
       webSecurity: true,
-      allowRunningInsecureContent: false,
+      allowRunningInsecureContent: true,
       backgroundThrottling: false
     }
   });
@@ -502,6 +492,14 @@ function installAdBlock(targetSession) {
       return;
     }
     callback({ cancel: false });
+  });
+}
+
+function configureBrowserPermissions(targetSession) {
+  if (!targetSession || targetSession.__minibeamPermissionsConfigured) return;
+  targetSession.__minibeamPermissionsConfigured = true;
+  targetSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(["fullscreen", "media", "display-capture"].includes(permission));
   });
 }
 
@@ -607,6 +605,9 @@ async function cleanup() {
   try {
     await session.defaultSession.clearCache();
     await session.defaultSession.clearStorageData();
+    const browserSession = session.fromPartition(chromeLikeSession);
+    await browserSession.clearCache();
+    await browserSession.clearStorageData();
   } catch {}
   try {
     fs.rmSync(runtimeDir, { recursive: true, force: true });

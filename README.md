@@ -14,7 +14,7 @@ It is a browser room, not a video player. There are no Play/Pause, volume, seek 
 
 The server stores room state: tabs, active tab, URL history, participants, and chat. New clients receive `room:state` and immediately see the current room.
 
-Electron blocks common advertising and tracker domains through `session.webRequest.onBeforeRequest`. A lightweight injected cleaner also removes obvious ad iframes, side banners, video ad overlays, and dynamically inserted ad nodes through `MutationObserver`. The blocker skips main-frame navigation and avoids removing elements that contain `video`, `audio`, `canvas`, `object`, or `embed`, so HTML5 players are less likely to break.
+Electron blocks common advertising and tracker domains through `session.webRequest.onBeforeRequest`, but it uses a player-safe mode: scripts, XHR/fetch, WebSocket, and media requests are not blocked at the network layer because many third-party players crash when ad SDK/bootstrap requests are removed too early. A lightweight injected cleaner removes obvious ad iframes, side banners, and dynamically inserted ad nodes through `MutationObserver` while avoiding elements that contain `video`, `audio`, `canvas`, `object`, or `embed`.
 
 When a site enters HTML fullscreen, MiniBeam expands the browser area while keeping the tab bar and address bar visible.
 
