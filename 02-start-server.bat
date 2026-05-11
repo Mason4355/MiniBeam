@@ -25,6 +25,12 @@ if not exist node_modules (
   exit /b 1
 )
 
+echo Cleaning old process on port 3847...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$portPids=Get-NetTCPConnection -LocalPort 3847 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; " ^
+  "foreach ($processId in $portPids) { try { Stop-Process -Id $processId -Force -ErrorAction Stop; Write-Host ('stopped port 3847 #' + $processId) } catch {} }"
+echo.
+
 call npm run server
 echo.
 pause

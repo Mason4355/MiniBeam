@@ -12,6 +12,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "  ($_.CommandLine -like ('*' + $root + '*') -or $_.CommandLine -like '*server.js*' -or $_.CommandLine -like '*launcher.js*' -or $_.CommandLine -like '*MINIBEAM_SERVER_URL*') " ^
   "}; " ^
   "foreach ($p in $procs) { try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; Write-Host ('stopped ' + $p.Name + ' #' + $p.ProcessId) } catch {} }; " ^
+  "$portPids=Get-NetTCPConnection -LocalPort 3847 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; " ^
+  "foreach ($processId in $portPids) { try { Stop-Process -Id $processId -Force -ErrorAction Stop; Write-Host ('stopped port 3847 #' + $processId) } catch {} }; " ^
   "Get-ChildItem $env:TEMP -Directory -Filter 'MiniBeamClient-*' -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; " ^
   "Write-Host 'runtime temp cleaned'"
 

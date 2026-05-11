@@ -2,7 +2,7 @@
 
 MiniBeam is a local Hyperbeam-style MVP: one PC starts a small Node.js room server, and Electron clients connect to it as synchronized browser windows.
 
-It is a browser room, not a video player. There are no Play/Pause, volume, seek bars, or custom video controls. Pages, YouTube, and direct HTML5 video links open inside Electron Chromium through `BrowserView`.
+It is a browser room, not a video player. There are no Play/Pause, volume, seek bars, or custom video controls. Pages, YouTube, and direct HTML5 video links open inside Electron Chromium through `BrowserView` with a Chrome-compatible user agent.
 
 ## What Is Inside
 
@@ -18,7 +18,7 @@ Electron blocks common advertising and tracker domains through `session.webReque
 
 When a site enters HTML fullscreen, MiniBeam expands the browser area while keeping the tab bar and address bar visible.
 
-MiniBeam uses Electron Chromium, so normal HTML5 video sites such as YouTube, Vimeo, Dailymotion, and direct `.mp4/.webm/.ogg` links render through Chromium. Browser DRM that depends on Google Chrome Widevine is not bundled automatically by Electron and would need a separate licensed CDM/runtime setup.
+MiniBeam uses Electron Chromium, so normal HTML5 video sites such as YouTube, Vimeo, Dailymotion, and direct `.mp4/.webm/.ogg` links render through Chromium. On Windows it also tries to reuse an installed Chrome/Edge Widevine CDM if one is present. Electron still cannot embed the full installed Google Chrome browser as a `BrowserView`; it can only run its bundled Chromium engine.
 
 ## BAT Files
 

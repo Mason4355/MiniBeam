@@ -15,47 +15,127 @@ const adBlockedSessions = new WeakSet();
 
 const blockedDomains = [
   "2mdn.net",
+  "3lift.com",
   "ad.gt",
+  "ad-delivery.net",
+  "ad-score.com",
+  "ad-stir.com",
+  "adblade.com",
+  "adbutler.com",
   "adform.net",
+  "adfox.ru",
+  "adkernel.com",
+  "adlightning.com",
+  "admanmedia.com",
+  "admarvel.com",
+  "adnami.io",
   "adnxs.com",
+  "adroll.com",
+  "ads-twitter.com",
+  "ads.linkedin.com",
   "adsafeprotected.com",
+  "adskeeper.com",
   "advertising.com",
+  "advertising.yandex.ru",
   "adsrvr.org",
+  "adtech.de",
+  "adtechus.com",
+  "adtrue.com",
+  "adtelligent.com",
+  "adzerk.net",
   "amazon-adsystem.com",
+  "amplitude.com",
   "analytics.google.com",
   "app-measurement.com",
+  "appsflyer.com",
+  "betweendigital.com",
+  "bidr.io",
+  "bidswitch.net",
   "bluekai.com",
+  "bounceexchange.com",
+  "casalemedia.com",
   "chartbeat.com",
+  "contextweb.com",
   "criteo.com",
   "criteo.net",
+  "demdex.net",
   "doubleclick.net",
+  "flashtalking.com",
   "facebook.net",
+  "gemius.pl",
   "google-analytics.com",
   "googleadservices.com",
   "googlesyndication.com",
   "googletagmanager.com",
   "googletagservices.com",
+  "gstaticadssl.l.google.com",
   "hotjar.com",
   "imasdk.googleapis.com",
+  "impact.com",
+  "imrworldwide.com",
+  "indexexchange.com",
+  "innovid.com",
+  "intentiq.com",
+  "lijit.com",
+  "liveintent.com",
+  "marketgid.com",
+  "mathtag.com",
+  "media.net",
+  "mgid.com",
   "moatads.com",
+  "mxptint.net",
+  "omtrdc.net",
   "openx.net",
+  "optimizely.com",
   "outbrain.com",
+  "popads.net",
+  "popcash.net",
+  "postrelease.com",
   "pubmatic.com",
+  "quantserve.com",
+  "revcontent.com",
   "rubiconproject.com",
   "scorecardresearch.com",
+  "segment.io",
+  "sharethrough.com",
   "smartadserver.com",
+  "spotx.tv",
+  "spotxchange.com",
   "taboola.com",
+  "tapad.com",
+  "teads.tv",
+  "tidaltv.com",
+  "tremorhub.com",
+  "tribalfusion.com",
+  "turn.com",
+  "vidoomy.com",
+  "videologygroup.com",
+  "weborama.fr",
+  "xandr.com",
   "yieldmo.com",
+  "yieldlab.net",
+  "yldbt.com",
+  "zedo.com",
   "yandexadexchange.net"
 ];
 
 const blockedUrlPatterns = [
   /(^|[/?&_.-])adserver([/?&_.-]|$)/i,
+  /(^|[/?&_.-])adservice([/?&_.-]|$)/i,
+  /(^|[/?&_.-])ad(s|x)?track(ing)?([/?&_.-]|$)/i,
+  /(^|[/?&_.-])adsbygoogle([/?&_.-]|$)/i,
   /(^|[/?&_.-])ads?[/?&_.-]/i,
+  /(^|[/?&_.-])advert(s|ising)?([/?&_.-]|$)/i,
   /(^|[/?&_.-])banner(s)?[/?&_.-]/i,
+  /(^|[/?&_.-])ima3?([/?&_.-]|$)/i,
+  /(^|[/?&_.-])outstream([/?&_.-]|$)/i,
+  /(^|[/?&_.-])(pre|mid|post)roll([/?&_.-]|$)/i,
   /(^|[/?&_.-])prebid([/?&_.-]|$)/i,
+  /(^|[/?&_.-])sponsor(ed)?([/?&_.-]|$)/i,
   /(^|[/?&_.-])tracking([/?&_.-]|$)/i,
-  /(^|[/?&_.-])utm_pixel([/?&_.-]|$)/i
+  /(^|[/?&_.-])utm_pixel([/?&_.-]|$)/i,
+  /(^|[/?&_.-])vast([/?&_.-]|$)/i,
+  /(^|[/?&_.-])vpaid([/?&_.-]|$)/i
 ];
 
 const adCleanerScript = `
@@ -65,6 +145,14 @@ const adCleanerScript = `
 
   const blockedHosts = ${JSON.stringify(blockedDomains)};
   const exactSelectors = [
+    "#player-ads",
+    "#masthead-ad",
+    "#merch-shelf",
+    "ytd-ad-slot-renderer",
+    "ytd-display-ad-renderer",
+    "ytd-promoted-sparkles-web-renderer",
+    "ytd-promoted-video-renderer",
+    "ytd-rich-section-renderer",
     ".video-ad-container",
     ".video-ads",
     ".ytp-ad-module",
@@ -83,6 +171,17 @@ const adCleanerScript = `
     ".overlay-ad",
     ".sponsor",
     ".sponsored",
+    ".sponsored-content",
+    ".native-ad",
+    ".outstream-ad",
+    ".companion-ad",
+    ".preroll-ad",
+    ".midroll-ad",
+    ".postroll-ad",
+    ".vast-ad",
+    ".vpaid-ad",
+    "[aria-label*='advertisement' i]",
+    "[aria-label*='реклама' i]",
     "[id^='google_ads_']",
     "[id*='google_ads']",
     "[id*='doubleclick']",
@@ -94,7 +193,7 @@ const adCleanerScript = `
   ];
 
   const broadSelectors = [".ad", ".ads", "[class~='ad']", "[class~='ads']", "[id~='ad']", "[id~='ads']"];
-  const adWords = /(^|[-_\\s])(ad|ads|advert|advertising|sponsor|sponsored|banner|promo|preroll|midroll|doubleclick|googlesyndication)([-_\\s]|$)/i;
+  const adWords = /(^|[-_\\s])(ad|ads|adv|advert|advertising|sponsor|sponsored|banner|promo|promoted|preroll|midroll|postroll|outstream|vast|vpaid|doubleclick|googlesyndication)([-_\\s]|$)/i;
   const protectedMedia = "video,audio,canvas,svg,object,embed";
 
   function hostIsBlocked(rawUrl) {
@@ -142,6 +241,9 @@ const adCleanerScript = `
   }
 
   function clean(root = document) {
+    ensureStyle();
+    skipVideoAds();
+
     for (const selector of exactSelectors) {
       root.querySelectorAll?.(selector).forEach((element) => {
         if (isExplicitAd(element) || selector.includes("ytp-ad") || selector.includes("video-ad")) removeElement(element);
@@ -171,6 +273,28 @@ const adCleanerScript = `
     };
   })();
 
+  function ensureStyle() {
+    if (document.getElementById("minibeam-ad-cleaner-style")) return;
+    const style = document.createElement("style");
+    style.id = "minibeam-ad-cleaner-style";
+    style.textContent = exactSelectors.join(",") + "{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}";
+    document.documentElement.appendChild(style);
+  }
+
+  function skipVideoAds() {
+    document.querySelectorAll(".ytp-ad-skip-button, .ytp-ad-skip-button-modern, button[class*='skip'], button[aria-label*='Skip' i], button[aria-label*='Пропустить' i]").forEach((button) => {
+      try { button.click(); } catch {}
+    });
+
+    document.querySelectorAll(".ad-showing video, video[class*='ad']").forEach((video) => {
+      try {
+        video.muted = true;
+        video.playbackRate = 16;
+        if (Number.isFinite(video.duration) && video.duration > 1) video.currentTime = Math.max(0, video.duration - 0.25);
+      } catch {}
+    });
+  }
+
   clean(document);
   new MutationObserver((mutations) => {
     for (const mutation of mutations) {
@@ -193,6 +317,8 @@ fs.mkdirSync(runtimeDir, { recursive: true });
 app.setPath("userData", runtimeDir);
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 app.commandLine.appendSwitch("disable-features", "HardwareMediaKeyHandling");
+app.commandLine.appendSwitch("enable-features", "PlatformHEVCDecoderSupport");
+configureWidevineFromInstalledBrowser();
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => app.quit());
@@ -301,7 +427,7 @@ function ensureView(tab) {
   });
 
   view.webContents.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
   );
 
   view.webContents.setWindowOpenHandler(({ url }) => {
@@ -312,7 +438,6 @@ function ensureView(tab) {
   view.webContents.on("enter-html-full-screen", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
-      mainWindow.maximize();
       sendBrowserEvent("html-fullscreen", { fullscreen: true });
       setTimeout(updateActiveViewBounds, 120);
     }
@@ -388,6 +513,59 @@ function shouldBlockRequest(rawUrl, resourceType) {
   if (resourceType === "media") return false;
   const pathAndQuery = `${parsed.pathname}${parsed.search}`.toLowerCase();
   return blockedUrlPatterns.some((pattern) => pattern.test(pathAndQuery));
+}
+
+function configureWidevineFromInstalledBrowser() {
+  const widevine = findWidevineCdm();
+  if (!widevine) return;
+  app.commandLine.appendSwitch("widevine-cdm-path", widevine.dllPath);
+  app.commandLine.appendSwitch("widevine-cdm-version", widevine.version);
+}
+
+function findWidevineCdm() {
+  const localAppData = process.env.LOCALAPPDATA || "";
+  const programFiles = process.env.PROGRAMFILES || "";
+  const programFilesX86 = process.env["PROGRAMFILES(X86)"] || "";
+  const candidates = [
+    path.join(localAppData, "Google", "Chrome", "User Data", "WidevineCdm"),
+    path.join(localAppData, "Microsoft", "Edge", "User Data", "WidevineCdm"),
+    path.join(programFiles, "Google", "Chrome", "Application", "WidevineCdm"),
+    path.join(programFilesX86, "Google", "Chrome", "Application", "WidevineCdm"),
+    path.join(programFiles, "Microsoft", "Edge", "Application", "WidevineCdm"),
+    path.join(programFilesX86, "Microsoft", "Edge", "Application", "WidevineCdm")
+  ];
+
+  for (const baseDir of candidates) {
+    const version = getLatestVersionDirectory(baseDir);
+    if (!version) continue;
+    const dllPath = path.join(baseDir, version, "_platform_specific", "win_x64", "widevinecdm.dll");
+    if (fs.existsSync(dllPath)) return { dllPath, version };
+  }
+  return null;
+}
+
+function getLatestVersionDirectory(baseDir) {
+  try {
+    return fs
+      .readdirSync(baseDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && /^\d+(\.\d+)+$/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort(compareVersions)
+      .pop();
+  } catch {
+    return "";
+  }
+}
+
+function compareVersions(left, right) {
+  const a = left.split(".").map(Number);
+  const b = right.split(".").map(Number);
+  const max = Math.max(a.length, b.length);
+  for (let index = 0; index < max; index += 1) {
+    const diff = (a[index] || 0) - (b[index] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 function reportNavigation(tabId, url) {
