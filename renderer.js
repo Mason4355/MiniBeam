@@ -1,6 +1,7 @@
 const serverUrl = window.miniBeam?.serverUrl || "http://127.0.0.1:3847";
 
 const ui = {
+  browserStage: document.querySelector("#browserStage"),
   tabs: document.querySelector("#tabs"),
   newTabButton: document.querySelector("#newTabButton"),
   addressForm: document.querySelector("#addressForm"),
@@ -29,7 +30,8 @@ const state = {
   tabs: [],
   participants: [],
   messages: [],
-  applyingRemote: false
+  applyingRemote: false,
+  lastSentByTab: new Map()
 };
 
 loadSocketClient().then(start).catch(() => {
@@ -48,6 +50,7 @@ function loadSocketClient() {
 }
 
 function start() {
+  observeBrowserBounds();
   state.socket = io(serverUrl, { transports: ["websocket", "polling"] });
   bindSocket();
   bindUi();
@@ -67,12 +70,12 @@ function bindSocket() {
 
   state.socket.on("room:state", (room) => {
     state.selfId = room.selfId || state.selfId;
-    state.roomCode = room.roomCode;
+    state.roomCode = room.roomCode || "";
     state.tabs = room.tabs || [];
     state.activeTabId = room.activeTabId || "";
     state.participants = room.participants || [];
     state.messages = room.messages || [];
-    syncAll();
+    syncAll(true);
   });
 
   state.socket.on("participants:update", (participants) => {
@@ -83,7 +86,7 @@ function bindSocket() {
   state.socket.on("tab:create", (payload) => {
     upsertTab(payload.tab);
     state.activeTabId = payload.activeTabId || payload.tab?.id || state.activeTabId;
-    syncTabs(true);
+    syncTabs(payload.sourceId !== state.selfId);
   });
 
   state.socket.on("tab:close", (payload) => {
@@ -95,7 +98,7 @@ function bindSocket() {
   state.socket.on("tab:switch", (payload) => {
     state.tabs = payload.tabs || state.tabs;
     state.activeTabId = payload.activeTabId || payload.tabId || state.activeTabId;
-    syncTabs(true);
+    syncTabs(false);
   });
 
   state.socket.on("tab:updateURL", (payload) => {
@@ -116,9 +119,7 @@ function bindUi() {
     event.preventDefault();
     const url = normalizeUrl(ui.addressInput.value);
     if (!url || !state.activeTabId) return;
-    state.applyingRemote = false;
-    window.miniBeam.browser.navigate(state.activeTabId, url);
-    state.socket.emit("tab:updateURL", { tabId: state.activeTabId, url, title: getTitleFromUrl(url) });
+    navigateActiveTab(url, getTitleFromUrl(url));
   });
 
   ui.backButton.addEventListener("click", () => window.miniBeam.browser.back());
@@ -126,7 +127,7 @@ function bindUi() {
   ui.reloadButton.addEventListener("click", () => window.miniBeam.browser.reload());
   ui.newTabButton.addEventListener("click", () => state.socket.emit("tab:create"));
 
-  ui.copyInviteButton.addEventListener("click", () => copyInvite(ui.copyInviteButton, "＋"));
+  ui.copyInviteButton.addEventListener("click", () => copyInvite(ui.copyInviteButton, "+"));
   ui.copyInviteButtonPanel.addEventListener("click", () => copyInvite(ui.copyInviteButtonPanel, "Копировать ссылку"));
   ui.copyInviteButtonFooter.addEventListener("click", () => copyInvite(ui.copyInviteButtonFooter, "Копировать приглашение"));
 
@@ -141,6 +142,12 @@ function bindUi() {
 
 function bindBrowserEvents() {
   window.miniBeam.browser.onEvent((event) => {
+    if (event.type === "html-fullscreen") {
+      document.body.classList.toggle("browser-fullscreen", Boolean(event.fullscreen));
+      requestAnimationFrame(sendBrowserBounds);
+      return;
+    }
+
     if (event.type === "loading" && event.tabId === state.activeTabId) {
       ui.statusText.textContent = event.loading ? "Загрузка..." : "Готово";
     }
@@ -152,30 +159,45 @@ function bindBrowserEvents() {
 
     if (event.type === "navigated") {
       updateLocalTab(event.tabId, { url: event.url, title: event.title || getTitleFromUrl(event.url) });
-      if (!state.applyingRemote) {
-        state.socket.emit("tab:updateURL", { tabId: event.tabId, url: event.url, title: event.title || getTitleFromUrl(event.url) });
-      }
+      emitTabUrlIfNeeded(event.tabId, event.url, event.title || getTitleFromUrl(event.url));
     }
 
     if (event.type === "title") {
       updateLocalTab(event.tabId, { title: event.title, url: event.url });
-      if (!state.applyingRemote) {
-        state.socket.emit("tab:updateURL", { tabId: event.tabId, url: event.url, title: event.title });
-      }
+      emitTabUrlIfNeeded(event.tabId, event.url, event.title);
     }
 
-    if (event.type === "new-window") {
+    if (event.type === "new-window" && event.url) {
       state.socket.emit("tab:create", { url: event.url });
     }
   });
 }
 
-function syncAll() {
+function observeBrowserBounds() {
+  sendBrowserBounds();
+  const resizeObserver = new ResizeObserver(sendBrowserBounds);
+  resizeObserver.observe(document.body);
+  resizeObserver.observe(ui.browserStage);
+  window.addEventListener("resize", sendBrowserBounds);
+}
+
+function sendBrowserBounds() {
+  if (!ui.browserStage || !window.miniBeam?.layout) return;
+  const rect = ui.browserStage.getBoundingClientRect();
+  window.miniBeam.layout.setBrowserBounds({
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height
+  });
+}
+
+function syncAll(remote = false) {
   renderRoom();
   renderTabs();
   renderParticipants();
   renderMessages();
-  syncBrowserViews(true);
+  syncBrowserViews(remote);
 }
 
 function syncTabs(remote = false) {
@@ -189,10 +211,26 @@ function syncBrowserViews(remote = false) {
   window.miniBeam.tabs.sync(state.tabs, state.activeTabId).finally(() => {
     const activeTab = getActiveTab();
     if (activeTab) ui.addressInput.value = activeTab.url;
+    sendBrowserBounds();
     setTimeout(() => {
       state.applyingRemote = false;
-    }, 500);
+    }, 700);
   });
+}
+
+function navigateActiveTab(url, title) {
+  updateLocalTab(state.activeTabId, { url, title });
+  state.lastSentByTab.set(state.activeTabId, `${url}|${title || ""}`);
+  window.miniBeam.browser.navigate(state.activeTabId, url);
+  state.socket.emit("tab:updateURL", { tabId: state.activeTabId, url, title });
+}
+
+function emitTabUrlIfNeeded(tabId, url, title) {
+  if (!tabId || !url || state.applyingRemote) return;
+  const lastKey = `${url}|${title || ""}`;
+  if (state.lastSentByTab.get(tabId) === lastKey) return;
+  state.lastSentByTab.set(tabId, lastKey);
+  state.socket.emit("tab:updateURL", { tabId, url, title });
 }
 
 function renderRoom() {
@@ -207,13 +245,22 @@ function renderTabs() {
     button.className = `tab ${tab.id === state.activeTabId ? "active" : ""}`;
     button.type = "button";
     button.title = tab.url;
-    button.innerHTML = `
-      <span class="tab-dot"></span>
-      <span class="tab-title">${escapeHtml(tab.title || "New tab")}</span>
-      <span class="tab-close" title="Закрыть">×</span>
-    `;
+
+    const dot = document.createElement("span");
+    dot.className = "tab-dot";
+
+    const title = document.createElement("span");
+    title.className = "tab-title";
+    title.textContent = tab.title || "New tab";
+
+    const close = document.createElement("span");
+    close.className = "tab-close";
+    close.title = "Закрыть вкладку";
+    close.textContent = "×";
+
+    button.append(dot, title, close);
     button.addEventListener("click", () => state.socket.emit("tab:switch", { tabId: tab.id }));
-    button.querySelector(".tab-close").addEventListener("click", (event) => {
+    close.addEventListener("click", (event) => {
       event.stopPropagation();
       state.socket.emit("tab:close", { tabId: tab.id });
     });

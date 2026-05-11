@@ -9,11 +9,51 @@ const viewPartitionPrefix = `minibeam-${process.pid}`;
 
 let mainWindow;
 let activeTabId = "";
+let browserBounds = { x: 0, y: 74, width: 950, height: 604 };
 const views = new Map();
+const adBlockedSessions = new WeakSet();
+
+const blockedDomains = [
+  "2mdn.net",
+  "adform.net",
+  "adnxs.com",
+  "adsafeprotected.com",
+  "adsrvr.org",
+  "amazon-adsystem.com",
+  "analytics.google.com",
+  "app-measurement.com",
+  "bluekai.com",
+  "chartbeat.com",
+  "criteo.com",
+  "criteo.net",
+  "doubleclick.net",
+  "facebook.net",
+  "google-analytics.com",
+  "googleadservices.com",
+  "googlesyndication.com",
+  "googletagmanager.com",
+  "googletagservices.com",
+  "hotjar.com",
+  "moatads.com",
+  "outbrain.com",
+  "scorecardresearch.com",
+  "taboola.com",
+  "yandexadexchange.net"
+];
+
+const blockedUrlPatterns = [
+  /(^|[/?&_.-])adserver([/?&_.-]|$)/i,
+  /(^|[/?&_.-])ads?[/?&_.-]/i,
+  /(^|[/?&_.-])banner(s)?[/?&_.-]/i,
+  /(^|[/?&_.-])prebid([/?&_.-]|$)/i,
+  /(^|[/?&_.-])tracking([/?&_.-]|$)/i,
+  /(^|[/?&_.-])utm_pixel([/?&_.-]|$)/i
+];
 
 fs.mkdirSync(runtimeDir, { recursive: true });
 app.setPath("userData", runtimeDir);
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+app.commandLine.appendSwitch("disable-features", "HardwareMediaKeyHandling");
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => app.quit());
@@ -21,6 +61,7 @@ app.on("before-quit", cleanup);
 
 async function createWindow() {
   Menu.setApplicationMenu(null);
+  installAdBlock(session.defaultSession);
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -41,6 +82,10 @@ async function createWindow() {
   mainWindow.on("resize", updateActiveViewBounds);
   mainWindow.on("maximize", updateActiveViewBounds);
   mainWindow.on("unmaximize", updateActiveViewBounds);
+  mainWindow.on("leave-full-screen", () => {
+    sendBrowserEvent("html-fullscreen", { fullscreen: false });
+    updateActiveViewBounds();
+  });
 }
 
 ipcMain.handle("tabs:sync", async (_event, tabs = [], nextActiveTabId = "") => {
@@ -88,12 +133,27 @@ ipcMain.handle("browser:reload", () => {
   views.get(activeTabId)?.webContents.reload();
 });
 
+ipcMain.handle("layout:set-browser-bounds", (_event, nextBounds = {}) => {
+  const scale = mainWindow?.webContents.getZoomFactor() || 1;
+  browserBounds = {
+    x: Math.max(0, Math.round(Number(nextBounds.x || 0) * scale)),
+    y: Math.max(0, Math.round(Number(nextBounds.y || 0) * scale)),
+    width: Math.max(320, Math.round(Number(nextBounds.width || 320) * scale)),
+    height: Math.max(240, Math.round(Number(nextBounds.height || 240) * scale))
+  };
+  updateActiveViewBounds();
+});
+
 function ensureView(tab) {
   if (views.has(tab.id)) return views.get(tab.id);
 
+  const partition = `${viewPartitionPrefix}-${tab.id}`;
+  const viewSession = session.fromPartition(partition);
+  installAdBlock(viewSession);
+
   const view = new BrowserView({
     webPreferences: {
-      partition: `${viewPartitionPrefix}-${tab.id}`,
+      partition,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -110,6 +170,17 @@ function ensureView(tab) {
     return { action: "deny" };
   });
 
+  view.webContents.on("enter-html-full-screen", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.maximize();
+      sendBrowserEvent("html-fullscreen", { fullscreen: true });
+      setTimeout(updateActiveViewBounds, 120);
+    }
+  });
+  view.webContents.on("leave-html-full-screen", () => {
+    sendBrowserEvent("html-fullscreen", { fullscreen: false });
+    setTimeout(updateActiveViewBounds, 120);
+  });
   view.webContents.on("did-start-loading", () => sendBrowserEvent("loading", { tabId: tab.id, loading: true }));
   view.webContents.on("did-stop-loading", () => {
     sendBrowserEvent("loading", { tabId: tab.id, loading: false });
@@ -137,18 +208,39 @@ function setActiveView(tabId) {
 function updateActiveViewBounds() {
   const view = views.get(activeTabId);
   if (!mainWindow || !view) return;
-  const [width, height] = mainWindow.getContentSize();
-  const rightPanel = width <= 1100 ? 290 : 330;
-  const topChrome = 74;
-  const bottomStatus = 42;
-
-  view.setBounds({
-    x: 0,
-    y: topChrome,
-    width: Math.max(320, width - rightPanel),
-    height: Math.max(240, height - topChrome - bottomStatus)
-  });
+  view.setBounds(browserBounds);
   view.setAutoResize({ width: true, height: true });
+}
+
+function installAdBlock(targetSession) {
+  if (!targetSession || adBlockedSessions.has(targetSession)) return;
+  adBlockedSessions.add(targetSession);
+
+  targetSession.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => {
+    if (shouldBlockRequest(details.url, details.resourceType)) {
+      callback({ cancel: true });
+      return;
+    }
+    callback({ cancel: false });
+  });
+}
+
+function shouldBlockRequest(rawUrl, resourceType) {
+  if (resourceType === "mainFrame") return false;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+
+  const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
+  const domainBlocked = blockedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  if (domainBlocked) return true;
+
+  if (resourceType === "media") return false;
+  const pathAndQuery = `${parsed.pathname}${parsed.search}`.toLowerCase();
+  return blockedUrlPatterns.some((pattern) => pattern.test(pathAndQuery));
 }
 
 function reportNavigation(tabId, url) {

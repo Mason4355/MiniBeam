@@ -14,6 +14,10 @@ It is a browser room, not a video player. There are no Play/Pause, volume, seek 
 
 The server stores room state: tabs, active tab, URL history, participants, and chat. New clients receive `room:state` and immediately see the current room.
 
+Electron blocks common advertising and tracker domains through `session.webRequest.onBeforeRequest`. The blocker skips main-frame navigation and does not pattern-block media requests, so HTML5 players are less likely to break.
+
+When a site enters HTML fullscreen, MiniBeam expands the browser area while keeping the tab bar and address bar visible.
+
 ## BAT Files
 
 - `01-install-deps.bat` - install dependencies.

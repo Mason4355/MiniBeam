@@ -14,5 +14,8 @@ contextBridge.exposeInMainWorld("miniBeam", {
     onEvent: (callback) => {
       ipcRenderer.on("browser:event", (_event, payload) => callback(payload));
     }
+  },
+  layout: {
+    setBrowserBounds: (bounds) => ipcRenderer.invoke("layout:set-browser-bounds", bounds)
   }
 });
