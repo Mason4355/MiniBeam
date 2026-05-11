@@ -1,17 +1,17 @@
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
-const { app, BrowserView, BrowserWindow, Menu, ipcMain, session } = require("electron");
+const { app, BrowserWindow, Menu, WebContentsView, ipcMain, session } = require("electron");
 
 const runtimeDir = path.join(os.tmpdir(), `MiniBeamClient-${process.pid}`);
 const serverUrl = process.env.MINIBEAM_SERVER_URL || "http://127.0.0.1:3847";
-const viewPartitionPrefix = `minibeam-${process.pid}`;
 
 let mainWindow;
 let activeTabId = "";
 let browserBounds = { x: 0, y: 74, width: 950, height: 604 };
 const views = new Map();
 const adBlockedSessions = new WeakSet();
+const chromeLikeSession = "persist:minibeam-browser";
 
 const blockedDomains = [
   "2mdn.net",
@@ -70,7 +70,6 @@ const blockedDomains = [
   "googletagservices.com",
   "gstaticadssl.l.google.com",
   "hotjar.com",
-  "imasdk.googleapis.com",
   "impact.com",
   "imrworldwide.com",
   "indexexchange.com",
@@ -127,7 +126,6 @@ const blockedUrlPatterns = [
   /(^|[/?&_.-])ads?[/?&_.-]/i,
   /(^|[/?&_.-])advert(s|ising)?([/?&_.-]|$)/i,
   /(^|[/?&_.-])banner(s)?[/?&_.-]/i,
-  /(^|[/?&_.-])ima3?([/?&_.-]|$)/i,
   /(^|[/?&_.-])outstream([/?&_.-]|$)/i,
   /(^|[/?&_.-])(pre|mid|post)roll([/?&_.-]|$)/i,
   /(^|[/?&_.-])prebid([/?&_.-]|$)/i,
@@ -358,7 +356,7 @@ ipcMain.handle("tabs:sync", async (_event, tabs = [], nextActiveTabId = "") => {
   for (const [tabId, view] of views.entries()) {
     if (!knownIds.has(tabId)) {
       try {
-        if (mainWindow?.getBrowserView() === view) mainWindow.setBrowserView(null);
+        mainWindow?.contentView.removeChildView(view);
         view.webContents.close({ waitForBeforeUnload: false });
       } catch {}
       views.delete(tabId);
@@ -412,19 +410,26 @@ ipcMain.handle("layout:set-browser-bounds", (_event, nextBounds = {}) => {
 function ensureView(tab) {
   if (views.has(tab.id)) return views.get(tab.id);
 
-  const partition = `${viewPartitionPrefix}-${tab.id}`;
+  const partition = chromeLikeSession;
   const viewSession = session.fromPartition(partition);
   installAdBlock(viewSession);
 
-  const view = new BrowserView({
+  const view = new WebContentsView({
     webPreferences: {
       partition,
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      plugins: true
+      plugins: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      backgroundThrottling: false
     }
   });
+
+  mainWindow.contentView.addChildView(view);
+  view.setVisible(false);
+  view.setBackgroundColor("#000000");
 
   view.webContents.setUserAgent(
     `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
@@ -467,16 +472,19 @@ function setActiveView(tabId) {
   const view = views.get(tabId);
   if (!mainWindow || !view) return;
   activeTabId = tabId;
-  mainWindow.setBrowserView(view);
+  for (const [id, item] of views.entries()) {
+    item.setVisible(id === tabId);
+  }
+  mainWindow.contentView.addChildView(view);
   updateActiveViewBounds();
   sendNavigationState(tabId);
 }
 
 function updateActiveViewBounds() {
-  const view = views.get(activeTabId);
-  if (!mainWindow || !view) return;
-  view.setBounds(browserBounds);
-  view.setAutoResize({ width: true, height: true });
+  if (!mainWindow) return;
+  for (const view of views.values()) {
+    view.setBounds(browserBounds);
+  }
 }
 
 function injectAdCleaner(view) {
@@ -499,6 +507,7 @@ function installAdBlock(targetSession) {
 
 function shouldBlockRequest(rawUrl, resourceType) {
   if (resourceType === "mainFrame") return false;
+  if (["script", "xhr", "fetch", "webSocket", "media"].includes(resourceType)) return false;
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -510,7 +519,6 @@ function shouldBlockRequest(rawUrl, resourceType) {
   const domainBlocked = blockedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
   if (domainBlocked) return true;
 
-  if (resourceType === "media") return false;
   const pathAndQuery = `${parsed.pathname}${parsed.search}`.toLowerCase();
   return blockedUrlPatterns.some((pattern) => pattern.test(pathAndQuery));
 }
