@@ -28,8 +28,5 @@ if not exist node_modules (
 call npm run client
 
 echo.
-echo Cleaning MiniBeam helper processes...
-taskkill /F /IM electron.exe /T >nul 2>nul
-taskkill /F /IM MiniBeam.exe /T >nul 2>nul
-echo.
+echo Client closed.
 pause

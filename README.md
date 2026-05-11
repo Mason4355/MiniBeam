@@ -27,6 +27,8 @@ MiniBeam uses Electron Chromium, so normal HTML5 video sites such as YouTube, Vi
 - `03-start-client.bat` - start one Electron client.
 - `04-check-code.bat` - check JavaScript syntax.
 - `05-build-portable-exe.bat` - build `fresh-release\MiniBeam.exe` later.
+- `06-test-two-clients.bat` - clean old MiniBeam processes, check code, start one server, and open two clients for sync testing.
+- `00-stop-clean.bat` - stop MiniBeam server/client processes from this project and remove temp runtime folders.
 
 For testing several clients, keep `02-start-server.bat` open and run `03-start-client.bat` multiple times.
 
